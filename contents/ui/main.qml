@@ -19,6 +19,7 @@ PlasmoidItem {
 
     preferredRepresentation: fullRepresentation
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
+    Plasmoid.globalShortcut: Plasmoid.configuration.overlayShortcut
 
     property var vault: null
     property string currentView: "graph"
@@ -149,6 +150,16 @@ PlasmoidItem {
         }
     }
 
+    function _toggleOverlay() {
+        if (overlayWindow.visible) {
+            overlayWindow.hide()
+        } else {
+            overlayWindow.showFullScreen()
+        }
+    }
+
+    Plasmoid.onActivated: _toggleOverlay()
+
     Component.onCompleted: _initVault()
 
     Connections {
@@ -162,6 +173,9 @@ PlasmoidItem {
                     Plasmoid.configuration.vaultPath)
                 root.currentView = "page"
             }
+        }
+        function onOverlayShortcutChanged() {
+            Plasmoid.globalShortcut = Plasmoid.configuration.overlayShortcut
         }
     }
 
@@ -217,6 +231,13 @@ PlasmoidItem {
         onVisibleChanged: {
             root.overlayActive = overlayWindow.visible
             if (overlayWindow.visible) overlayWindow.requestActivate()
+        }
+
+        Shortcut {
+            sequence: "Escape"
+            enabled: overlayWindow.visible
+            context: Qt.WindowShortcut
+            onActivated: overlayWindow.hide()
         }
     }
 }
