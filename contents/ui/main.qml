@@ -4,6 +4,7 @@ import org.kde.plasma.plasmoid
 import org.kde.kirigami as Kirigami
 import "components"
 import "../code/vault.js" as VaultJs
+import "../code/markdown.js" as MarkdownJs
 import "../code/qml-fs.js" as QmlFs
 
 PlasmoidItem {
@@ -33,7 +34,7 @@ PlasmoidItem {
     function _initVault() {
         if (!Plasmoid.configuration.vaultPath) return
         const fs = _buildVaultFs()
-        root.vault = VaultJs.createVaultModel({ fs: fs })
+        root.vault = VaultJs.createVaultModel({ fs: fs, markdown: MarkdownJs })
         root.vault.on("ready", function () { root.vaultReady = true })
         try {
             root.vault.scan(Plasmoid.configuration.vaultPath)
