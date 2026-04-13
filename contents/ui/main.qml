@@ -175,95 +175,9 @@ PlasmoidItem {
         }
     }
 
-    fullRepresentation: Item {
+    fullRepresentation: VaultView {
         anchors.fill: parent
-
-        Rectangle {
-            anchors.fill: parent
-            radius: 6
-            color: Kirigami.Theme.backgroundColor
-            opacity: root.currentView === "graph"
-                ? Plasmoid.configuration.graphOpacity
-                : Plasmoid.configuration.pageOpacity
-        }
-
-        Kirigami.PlaceholderMessage {
-            anchors.centerIn: parent
-            visible: !Plasmoid.configuration.vaultPath
-            text: qsTr("Configure a vault path in the widget settings.")
-        }
-
-        Kirigami.PlaceholderMessage {
-            anchors.centerIn: parent
-            visible: Plasmoid.configuration.vaultPath && !root.vaultReady
-            text: qsTr("Loading vault…")
-        }
-
-        Loader {
-            id: viewLoader
-            anchors.fill: parent
-            active: root.vaultReady
-            visible: root.vaultReady
-            sourceComponent: root.currentView === "graph" ? graphComponent : pageComponent
-        }
-
-        Component {
-            id: graphComponent
-            GraphView {
-                vaultModel: root.vault
-                nodeColors: root.nodeColors
-                showLabels: Plasmoid.configuration.showLabels
-                labelFontSize: Plasmoid.configuration.graphLabelFontSize
-                physicsConfig: ({
-                    repulsion: Plasmoid.configuration.physicsRepulsion,
-                    springLength: Plasmoid.configuration.physicsSpringLength,
-                    springK: Plasmoid.configuration.physicsSpringK,
-                    centering: Plasmoid.configuration.physicsCentering,
-                    damping: Plasmoid.configuration.physicsDamping,
-                    maxVelocity: Plasmoid.configuration.physicsMaxVelocity,
-                })
-                onNodeActivated: (path) => {
-                    root.activeNotePath = path
-                    root.currentView = "page"
-                    idleTimer.restart()
-                }
-            }
-        }
-
-        Component {
-            id: pageComponent
-            PageView {
-                vaultModel: root.vault
-                notePath: root.activeNotePath
-                autosaveEnabled: Plasmoid.configuration.autosaveEnabled
-                autosaveDebounceMs: Plasmoid.configuration.autosaveDebounceMs
-                fontSize: Plasmoid.configuration.pageFontSize
-                showBackButton: Plasmoid.configuration.mode === "dynamic"
-                onWikilinkClicked: (target) => {
-                    for (const n of root.vault.allNotes()) {
-                        if (n.basename === target || n.path === target) {
-                            root.activeNotePath = n.path
-                            break
-                        }
-                    }
-                    idleTimer.restart()
-                }
-                onDismissed: {
-                    if (Plasmoid.configuration.mode === "dynamic") {
-                        root.currentView = "graph"
-                        root.activeNotePath = ""
-                    }
-                }
-            }
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            propagateComposedEvents: true
-            hoverEnabled: true
-            enabled: root.currentView === "page" && Plasmoid.configuration.mode === "dynamic"
-            onPositionChanged: idleTimer.restart()
-            onPressed: (e) => { idleTimer.restart(); e.accepted = false }
-        }
+        stateOwner: root
+        idleTimer: idleTimer
     }
 }
