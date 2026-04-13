@@ -223,6 +223,16 @@ PlasmoidItem {
         }
     }
 
+    Connections {
+        target: Qt.application
+        function onScreenRemoved(screen) {
+            if (overlayWindow.visible && overlayWindow.screen === screen) {
+                overlayWindow.hide()
+                overlayWindow.screen = null
+            }
+        }
+    }
+
     Timer {
         id: idleTimer
         interval: Plasmoid.configuration.idleTimeoutSec * 1000
@@ -275,6 +285,14 @@ PlasmoidItem {
         onVisibleChanged: {
             root.overlayActive = overlayWindow.visible
             if (overlayWindow.visible) overlayWindow.requestActivate()
+        }
+
+        onActiveChanged: {
+            if (!overlayWindow.active
+                && overlayWindow.visible
+                && Plasmoid.configuration.overlayCloseOnFocusLost) {
+                overlayWindow.hide()
+            }
         }
 
         Shortcut {
