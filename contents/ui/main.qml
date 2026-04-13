@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
@@ -24,6 +25,7 @@ PlasmoidItem {
     property string activeNotePath: ""
     property bool vaultReady: false
     property var nodeColors: ({})
+    property bool overlayActive: false
 
     FsHelper { id: fsHelper }
 
@@ -175,9 +177,46 @@ PlasmoidItem {
         }
     }
 
-    fullRepresentation: VaultView {
+    fullRepresentation: Item {
         anchors.fill: parent
-        stateOwner: root
-        idleTimer: idleTimer
+        Loader {
+            anchors.fill: parent
+            active: !root.overlayActive
+            sourceComponent: desktopVaultComponent
+        }
+        Component {
+            id: desktopVaultComponent
+            VaultView {
+                stateOwner: root
+                idleTimer: idleTimer
+            }
+        }
+    }
+
+    Window {
+        id: overlayWindow
+        visible: false
+        flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+        color: Qt.rgba(0, 0, 0, Plasmoid.configuration.overlayDimAlpha)
+
+        Loader {
+            id: overlayLoader
+            anchors.fill: parent
+            active: overlayWindow.visible
+            sourceComponent: overlayVaultComponent
+        }
+
+        Component {
+            id: overlayVaultComponent
+            VaultView {
+                stateOwner: root
+                idleTimer: idleTimer
+            }
+        }
+
+        onVisibleChanged: {
+            root.overlayActive = overlayWindow.visible
+            if (overlayWindow.visible) overlayWindow.requestActivate()
+        }
     }
 }
