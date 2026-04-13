@@ -46,5 +46,14 @@
         <entry name="graphLabelFontSize" type="Int">
             <default>10</default><min>6</min><max>32</max>
         </entry>
+        <entry name="overlayShortcut" type="String">
+            <default>Meta+O</default>
+        </entry>
+        <entry name="overlayDimAlpha" type="Double">
+            <default>0.75</default><min>0.0</min><max>1.0</max>
+        </entry>
+        <entry name="overlayCloseOnFocusLost" type="Bool">
+            <default>true</default>
+        </entry>
     </group>
 </kcfg>

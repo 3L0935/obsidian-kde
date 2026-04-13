@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
+import org.kde.kquickcontrols as KQC
 
 Kirigami.FormLayout {
     id: root
@@ -27,6 +28,9 @@ Kirigami.FormLayout {
     property alias cfg_physicsMaxVelocity: physMaxVel.value
     property alias cfg_pageFontSize: pageFontSpin.value
     property alias cfg_graphLabelFontSize: graphLabelFontSpin.value
+    property string cfg_overlayShortcut: "Meta+O"
+    property alias cfg_overlayDimAlpha: overlayDimSlider.value
+    property alias cfg_overlayCloseOnFocusLost: overlayCloseOnFocusCheck.checked
 
     RowLayout {
         Kirigami.FormData.label: i18n("Vault path:")
@@ -234,9 +238,38 @@ Kirigami.FormLayout {
         }
     }
 
+    Kirigami.Separator {
+        Kirigami.FormData.isSection: true
+        Kirigami.FormData.label: i18n("Overlay")
+    }
+
+    KQC.KeySequenceItem {
+        id: overlayShortcutField
+        Kirigami.FormData.label: i18n("Toggle shortcut:")
+        onKeySequenceChanged: root.cfg_overlayShortcut = keySequence.toString()
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Dim level:")
+        Slider {
+            id: overlayDimSlider
+            from: 0.0; to: 1.0; stepSize: 0.01
+            Layout.fillWidth: true
+        }
+        Label { text: Math.round(overlayDimSlider.value * 100) + "%"; Layout.minimumWidth: 48 }
+    }
+
+    CheckBox {
+        id: overlayCloseOnFocusCheck
+        Kirigami.FormData.label: i18n("Close on focus loss:")
+        text: i18n("Hide the overlay when another window gains focus")
+        checked: true
+    }
+
     Component.onCompleted: {
         // Sync radios to the plain cfg_mode value plasmashell just wrote.
         if (cfg_mode === "pinned") pinnedRadio.checked = true
         else dynamicRadio.checked = true
+        overlayShortcutField.keySequence = cfg_overlayShortcut
     }
 }
