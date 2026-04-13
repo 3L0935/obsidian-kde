@@ -21,7 +21,9 @@ PlasmoidItem {
 
     preferredRepresentation: fullRepresentation
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
-    Plasmoid.globalShortcut: Plasmoid.configuration.overlayShortcut
+    Plasmoid.globalShortcut: Plasmoid.configuration.overlayEnabled
+        ? Plasmoid.configuration.overlayShortcut
+        : ""
 
     property var vault: null
     property string currentView: "graph"
@@ -180,6 +182,7 @@ PlasmoidItem {
     }
 
     function _toggleOverlay() {
+        if (!Plasmoid.configuration.overlayEnabled) return
         if (overlayWindow.visible) {
             overlayWindow.hide()
             return
@@ -209,7 +212,14 @@ PlasmoidItem {
             }
         }
         function onOverlayShortcutChanged() {
-            Plasmoid.globalShortcut = Plasmoid.configuration.overlayShortcut
+            Plasmoid.globalShortcut = Plasmoid.configuration.overlayEnabled
+                ? Plasmoid.configuration.overlayShortcut
+                : ""
+        }
+        function onOverlayEnabledChanged() {
+            Plasmoid.globalShortcut = Plasmoid.configuration.overlayEnabled
+                ? Plasmoid.configuration.overlayShortcut
+                : ""
         }
     }
 

@@ -28,6 +28,7 @@ Kirigami.FormLayout {
     property alias cfg_physicsMaxVelocity: physMaxVel.value
     property alias cfg_pageFontSize: pageFontSpin.value
     property alias cfg_graphLabelFontSize: graphLabelFontSpin.value
+    property alias cfg_overlayEnabled: overlayEnabledCheck.checked
     property string cfg_overlayShortcut: "Meta+O"
     property alias cfg_overlayDimAlpha: overlayDimSlider.value
     property alias cfg_overlayCloseOnFocusLost: overlayCloseOnFocusCheck.checked
@@ -243,14 +244,23 @@ Kirigami.FormLayout {
         Kirigami.FormData.label: i18n("Overlay")
     }
 
+    CheckBox {
+        id: overlayEnabledCheck
+        Kirigami.FormData.label: i18n("Enable global shortcut:")
+        text: i18n("Allow this widget to handle the global overlay shortcut")
+        checked: false
+    }
+
     KQC.KeySequenceItem {
         id: overlayShortcutField
         Kirigami.FormData.label: i18n("Toggle shortcut:")
+        enabled: overlayEnabledCheck.checked
         onKeySequenceChanged: root.cfg_overlayShortcut = keySequence.toString()
     }
 
     RowLayout {
         Kirigami.FormData.label: i18n("Dim level:")
+        enabled: overlayEnabledCheck.checked
         Slider {
             id: overlayDimSlider
             from: 0.0; to: 1.0; stepSize: 0.01
@@ -262,6 +272,7 @@ Kirigami.FormLayout {
     CheckBox {
         id: overlayCloseOnFocusCheck
         Kirigami.FormData.label: i18n("Close on focus loss:")
+        enabled: overlayEnabledCheck.checked
         text: i18n("Hide the overlay when another window gains focus")
         checked: true
     }
