@@ -4,10 +4,12 @@ import QtQuick.Window
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.plasma5support as Plasma5Support
 import "components"
 import "../code/vault.js" as VaultJs
 import "../code/markdown.js" as MarkdownJs
 import "../code/qml-fs.js" as QmlFs
+import "../code/screen-resolver.js" as ScreenResolver
 
 PlasmoidItem {
     id: root
@@ -29,6 +31,33 @@ PlasmoidItem {
     property bool overlayActive: false
 
     FsHelper { id: fsHelper }
+
+    Plasma5Support.DataSource {
+        id: dbusRunner
+        engine: "executable"
+        connectedSources: []
+
+        property var _pendingCallback: null
+
+        onNewData: (sourceName, data) => {
+            disconnectSource(sourceName)
+            var out = ((data && data["stdout"]) || "").trim()
+            if (_pendingCallback) {
+                var cb = _pendingCallback
+                _pendingCallback = null
+                cb(out)
+            }
+        }
+
+        function queryActiveOutputName(callback) {
+            _pendingCallback = callback
+            // Try qdbus6 first (Plasma 6 / Qt 6), fall back to qdbus (older).
+            // If the activeOutputName method doesn't exist on this KWin build,
+            // the command prints an empty line and the resolver falls back.
+            var cmd = "qdbus6 org.kde.KWin /KWin activeOutputName 2>/dev/null || qdbus org.kde.KWin /KWin activeOutputName 2>/dev/null || echo ''"
+            connectSource(cmd)
+        }
+    }
 
     function _rgbIntToHex(rgb) {
         var hex = ((rgb >>> 0) & 0xffffff).toString(16)
@@ -153,9 +182,14 @@ PlasmoidItem {
     function _toggleOverlay() {
         if (overlayWindow.visible) {
             overlayWindow.hide()
-        } else {
-            overlayWindow.showFullScreen()
+            return
         }
+        dbusRunner.queryActiveOutputName(function (outputName) {
+            var fallback = root.Window.window ? root.Window.window.screen : null
+            var target = ScreenResolver.pickScreen(Qt.application.screens, outputName, fallback)
+            if (target) overlayWindow.screen = target
+            overlayWindow.showFullScreen()
+        })
     }
 
     Plasmoid.onActivated: _toggleOverlay()
