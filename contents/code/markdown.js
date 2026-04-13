@@ -93,6 +93,11 @@ function renderInline(text) {
     return out;
 }
 
+function splitTableRow(line) {
+    var s = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    return s.split("|").map(function (c) { return c.trim(); });
+}
+
 function renderHtml(text) {
     var lines = text.split(/\r?\n/);
     var out = [];
@@ -141,8 +146,38 @@ function renderHtml(text) {
             continue;
         }
 
-        if (!line.trim()) {
+        if (/^\s*\|.*\|\s*$/.test(line) &&
+            i + 1 < lines.length &&
+            /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
+            var header = splitTableRow(line);
+            i += 2;
+            var rows = [];
+            while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
+                rows.push(splitTableRow(lines[i]));
+                i++;
+            }
+            var thead = "<tr>" + header.map(function (c) {
+                return "<th>" + renderInline(c) + "</th>";
+            }).join("") + "</tr>";
+            var tbody = rows.map(function (r) {
+                return "<tr>" + r.map(function (c) {
+                    return "<td>" + renderInline(c) + "</td>";
+                }).join("") + "</tr>";
+            }).join("");
+            out.push("<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">" + thead + tbody + "</table>");
+            continue;
+        }
+
+        if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+            out.push("<hr/>");
             i++;
+            continue;
+        }
+
+        if (!line.trim()) {
+            var blanks = 0;
+            while (i < lines.length && !lines[i].trim()) { blanks++; i++; }
+            for (var b = 1; b < blanks; b++) out.push("<br/>");
             continue;
         }
 
