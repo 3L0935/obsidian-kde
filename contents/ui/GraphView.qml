@@ -47,8 +47,7 @@ Item {
         onPaint: {
             const ctx = getContext("2d")
             ctx.reset()
-            ctx.fillStyle = Kirigami.Theme.backgroundColor
-            ctx.fillRect(0, 0, width, height)
+            ctx.clearRect(0, 0, width, height)
 
             if (!root.sim) return
 

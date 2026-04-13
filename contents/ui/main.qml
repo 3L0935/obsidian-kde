@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
+import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import "components"
 import "../code/vault.js" as VaultJs
@@ -16,6 +17,7 @@ PlasmoidItem {
     Layout.preferredHeight: 500
 
     preferredRepresentation: fullRepresentation
+    Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
 
     property var vault: null
     property string currentView: "graph"
@@ -155,6 +157,15 @@ PlasmoidItem {
     fullRepresentation: Item {
         anchors.fill: parent
 
+        Rectangle {
+            anchors.fill: parent
+            radius: 6
+            color: Kirigami.Theme.backgroundColor
+            opacity: root.currentView === "graph"
+                ? Plasmoid.configuration.graphOpacity
+                : Plasmoid.configuration.pageOpacity
+        }
+
         Kirigami.PlaceholderMessage {
             anchors.centerIn: parent
             visible: !Plasmoid.configuration.vaultPath
@@ -195,6 +206,7 @@ PlasmoidItem {
                 vaultModel: root.vault
                 notePath: root.activeNotePath
                 autosaveDebounceMs: Plasmoid.configuration.autosaveDebounceMs
+                showBackButton: Plasmoid.configuration.mode === "dynamic"
                 onWikilinkClicked: (target) => {
                     for (const n of root.vault.allNotes()) {
                         if (n.basename === target || n.path === target) {

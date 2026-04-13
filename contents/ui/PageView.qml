@@ -11,6 +11,7 @@ Item {
     property var vaultModel: null
     property string notePath: ""
     property int autosaveDebounceMs: 500
+    property bool showBackButton: false
 
     signal wikilinkClicked(string target)
     signal dismissed()
@@ -80,6 +81,15 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.margins: 4
+            Button {
+                visible: root.showBackButton
+                text: "←"
+                flat: true
+                onClicked: {
+                    if (root.saveState === "dirty") _saveNow()
+                    root.dismissed()
+                }
+            }
             SaveIndicator { indicatorState: root.saveState }
             Label {
                 text: root.note ? root.note.title : ""

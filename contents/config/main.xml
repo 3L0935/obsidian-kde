@@ -15,5 +15,11 @@
             <default>500</default><min>100</min><max>5000</max>
         </entry>
         <entry name="showLabels" type="Bool"><default>true</default></entry>
+        <entry name="graphOpacity" type="Double">
+            <default>0.5</default><min>0.0</min><max>1.0</max>
+        </entry>
+        <entry name="pageOpacity" type="Double">
+            <default>0.95</default><min>0.0</min><max>1.0</max>
+        </entry>
     </group>
 </kcfg>

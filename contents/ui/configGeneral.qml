@@ -13,6 +13,8 @@ Kirigami.FormLayout {
     property alias cfg_idleTimeoutSec: idleTimeoutSpin.value
     property alias cfg_autosaveDebounceMs: autosaveSpin.value
     property alias cfg_showLabels: showLabelsCheck.checked
+    property alias cfg_graphOpacity: graphOpacitySpin.value
+    property alias cfg_pageOpacity: pageOpacitySpin.value
 
     RowLayout {
         Kirigami.FormData.label: i18n("Vault path:")
@@ -63,6 +65,26 @@ Kirigami.FormLayout {
         Kirigami.FormData.label: i18n("Show node labels:")
         text: i18n("Display note titles in graph")
         checked: true
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Graph opacity:")
+        Slider {
+            id: graphOpacitySpin
+            from: 0.0; to: 1.0; stepSize: 0.05
+            Layout.fillWidth: true
+        }
+        Label { text: Math.round(graphOpacitySpin.value * 100) + "%" }
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Page opacity:")
+        Slider {
+            id: pageOpacitySpin
+            from: 0.0; to: 1.0; stepSize: 0.05
+            Layout.fillWidth: true
+        }
+        Label { text: Math.round(pageOpacitySpin.value * 100) + "%" }
     }
 
     Component.onCompleted: {
