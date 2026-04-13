@@ -86,3 +86,48 @@ describe("VaultModel.scan", () => {
     assertDeepEqual(n.outgoingLinks, []);
   });
 });
+
+describe("VaultModel.saveNote", () => {
+  function setupTempVault() {
+    const tmp = path.join(__dirname, "_tmp_vault_" + Date.now());
+    fs.mkdirSync(tmp);
+    fs.writeFileSync(path.join(tmp, "a.md"), "# A\nLinks to [[b]]");
+    fs.writeFileSync(path.join(tmp, "b.md"), "# B");
+    return tmp;
+  }
+
+  function cleanup(tmp) {
+    for (const f of fs.readdirSync(tmp)) fs.unlinkSync(path.join(tmp, f));
+    fs.rmdirSync(tmp);
+  }
+
+  it("writes content and updates mtime", () => {
+    const tmp = setupTempVault();
+    try {
+      const vm = createVaultModel({ fs: nodeFs() });
+      vm.scan(tmp);
+      const before = vm.getNote("a.md");
+      const busyUntil = Date.now() + 20;
+      while (Date.now() < busyUntil) { /* spin */ }
+      const result = vm.saveNote("a.md", "# A modified", before.mtime);
+      assertTrue(result.ok, "save should succeed");
+      assertTrue(!result.conflict, "no conflict expected");
+      const after = vm.getNote("a.md");
+      assertTrue(after.content.includes("A modified"), "content updated");
+    } finally { cleanup(tmp); }
+  });
+
+  it("reports conflict when file changed externally", () => {
+    const tmp = setupTempVault();
+    try {
+      const vm = createVaultModel({ fs: nodeFs() });
+      vm.scan(tmp);
+      const before = vm.getNote("a.md");
+      const busyUntil = Date.now() + 20;
+      while (Date.now() < busyUntil) { /* spin */ }
+      fs.writeFileSync(path.join(tmp, "a.md"), "# externally changed");
+      const result = vm.saveNote("a.md", "# from widget", before.mtime);
+      assertTrue(result.conflict, "should detect conflict");
+    } finally { cleanup(tmp); }
+  });
+});
