@@ -43,8 +43,11 @@ QtObject {
         const token = _nextToken++
         _pending[token] = model
 
+        let _processed = false
         function processWhenReady() {
-            if (model.status !== FolderListModel.Ready) return
+            if (_processed || model.status !== FolderListModel.Ready) return
+            _processed = true
+            model.statusChanged.disconnect(processWhenReady)
             try {
                 for (let i = 0; i < model.count; i++) {
                     const name = model.get(i, "fileName")

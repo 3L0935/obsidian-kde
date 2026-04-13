@@ -5,10 +5,10 @@ var PHYSICS_DEFAULTS = {
     repulsion: 2000,
     springLength: 80,
     springK: 0.04,
-    centering: 0.01,
-    damping: 0.9,
+    centering: 0.02,
+    damping: 0.85,
     theta: 0.8,
-    maxVelocity: 50,
+    maxVelocity: 30,
 };
 
 function createSimulation(opts) {
@@ -191,11 +191,10 @@ function createSimulation(opts) {
             if (b.fx === null) { b.vx -= fx; b.vy -= fy; }
         }
 
-        var c = centroid();
         for (var n2 of nodes) {
             if (n2.fx !== null) continue;
-            n2.vx -= c.x * cfg.centering;
-            n2.vy -= c.y * cfg.centering;
+            n2.vx -= n2.x * cfg.centering;
+            n2.vy -= n2.y * cfg.centering;
         }
 
         for (var n3 of nodes) {

@@ -7,6 +7,7 @@ Item {
     id: root
 
     property var vaultModel: null
+    property var nodeColors: ({})
     property bool showLabels: true
     signal nodeActivated(string path)
 
@@ -42,7 +43,6 @@ Item {
     Canvas {
         id: canvas
         anchors.fill: parent
-        renderStrategy: Canvas.Threaded
 
         onPaint: {
             const ctx = getContext("2d")
@@ -71,8 +71,10 @@ Item {
             }
             ctx.stroke()
 
+            const defaultColor = Kirigami.Theme.highlightColor
+            const colors = root.nodeColors || {}
             for (const n of nodes) {
-                ctx.fillStyle = Kirigami.Theme.highlightColor
+                ctx.fillStyle = colors[n.id] || defaultColor
                 ctx.beginPath()
                 ctx.arc(n.x, n.y, 5, 0, Math.PI * 2)
                 ctx.fill()
@@ -157,19 +159,24 @@ Item {
             const hit = hitNode(e.x, e.y)
             if (hit) root.nodeActivated(hit.id)
         }
+    }
 
-        WheelHandler {
-            target: null
-            onWheel: (ev) => {
-                const worldBefore = mouseArea.worldCoords(ev.x, ev.y)
-                const factor = ev.angleDelta.y > 0 ? 1.1 : (1 / 1.1)
-                root.zoom *= factor
-                if (root.zoom < 0.1) root.zoom = 0.1
-                if (root.zoom > 5.0) root.zoom = 5.0
-                root.panX = ev.x - root.width / 2 - worldBefore.x * root.zoom
-                root.panY = ev.y - root.height / 2 - worldBefore.y * root.zoom
-                canvas.requestPaint()
+    WheelHandler {
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        onWheel: (ev) => {
+            const mx = ev.x
+            const my = ev.y
+            const worldBefore = {
+                x: (mx - root.width / 2 - root.panX) / root.zoom,
+                y: (my - root.height / 2 - root.panY) / root.zoom,
             }
+            const factor = ev.angleDelta.y > 0 ? 1.1 : (1 / 1.1)
+            root.zoom *= factor
+            if (root.zoom < 0.1) root.zoom = 0.1
+            if (root.zoom > 5.0) root.zoom = 5.0
+            root.panX = mx - root.width / 2 - worldBefore.x * root.zoom
+            root.panY = my - root.height / 2 - worldBefore.y * root.zoom
+            canvas.requestPaint()
         }
     }
 }

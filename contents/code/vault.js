@@ -132,7 +132,9 @@ function createVaultModel(opts) {
                 notes.set(note.path, note);
                 indexBasename(note);
             } catch (e) {
-                // skip unreadable files
+                if (typeof console !== "undefined") {
+                    console.warn("[vault] parse failed:", abs, e && e.message);
+                }
             }
         }
         resolveAllLinks();

@@ -80,7 +80,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.margins: 4
-            SaveIndicator { state: root.saveState }
+            SaveIndicator { indicatorState: root.saveState }
             Label {
                 text: root.note ? root.note.title : ""
                 font.bold: true

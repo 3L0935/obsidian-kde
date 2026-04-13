@@ -10,19 +10,21 @@ function stripCode(text) {
 
 function extractWikilinks(text) {
     var stripped = stripCode(text);
-    var re = /\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]/g;
     var out = [];
-    var matches = stripped.matchAll(re);
-    for (var m of matches) out.push(m[1].trim());
+    stripped.replace(/\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]/g, function (_, target) {
+        out.push(target.trim());
+        return "";
+    });
     return out;
 }
 
 function extractTags(text) {
     var stripped = stripCode(text);
-    var re = /(?:^|\s)#([a-zA-Z][a-zA-Z0-9_/-]*)/g;
     var out = [];
-    var matches = stripped.matchAll(re);
-    for (var m of matches) out.push(m[1]);
+    stripped.replace(/(?:^|\s)#([a-zA-Z][a-zA-Z0-9_/-]*)/g, function (_, tag) {
+        out.push(tag);
+        return "";
+    });
     return out;
 }
 
