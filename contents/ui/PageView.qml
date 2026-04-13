@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "components"
-import "../code/marked.min.js" as Marked
 import "../code/markdown.js" as MD
 
 Item {
@@ -25,7 +24,7 @@ Item {
     function _renderedHtml() {
         if (!note) return ""
         const parsed = MD.parseFrontmatter(note.content)
-        let html = Marked.marked.parse(parsed.body)
+        let html = MD.renderHtml(parsed.body)
         html = html.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,
             function (_, t, l) { return "<a href=\"obsidian-wiki://" + encodeURIComponent(t) + "\">" + l + "</a>" })
         html = html.replace(/\[\[([^\]]+)\]\]/g,

@@ -65,3 +65,59 @@ describe("parseFrontmatter", () => {
     assertTrue(r.body.includes("more"), "body should include content after second ---");
   });
 });
+
+describe("renderHtml", () => {
+  it("renders headings", () => {
+    const html = md.renderHtml("# Hello\n## World");
+    assertTrue(html.includes("<h1>Hello</h1>"));
+    assertTrue(html.includes("<h2>World</h2>"));
+  });
+
+  it("renders bold and italic", () => {
+    const html = md.renderHtml("**bold** and *italic*");
+    assertTrue(html.includes("<strong>bold</strong>"));
+    assertTrue(html.includes("<em>italic</em>"));
+  });
+
+  it("renders inline code", () => {
+    const html = md.renderHtml("Use `foo()` now");
+    assertTrue(html.includes("<code>foo()</code>"));
+  });
+
+  it("renders fenced code blocks", () => {
+    const html = md.renderHtml("```\nline1\nline2\n```");
+    assertTrue(html.includes("<pre>"));
+    assertTrue(html.includes("line1"));
+    assertTrue(html.includes("line2"));
+  });
+
+  it("renders bullet lists", () => {
+    const html = md.renderHtml("- a\n- b\n- c");
+    assertTrue(html.includes("<ul>"));
+    assertTrue(html.includes("<li>a</li>"));
+    assertTrue(html.includes("<li>c</li>"));
+  });
+
+  it("renders numbered lists", () => {
+    const html = md.renderHtml("1. first\n2. second");
+    assertTrue(html.includes("<ol>"));
+    assertTrue(html.includes("<li>first</li>"));
+  });
+
+  it("renders markdown links", () => {
+    const html = md.renderHtml("See [here](https://example.com)");
+    assertTrue(html.includes('<a href="https://example.com">here</a>'));
+  });
+
+  it("escapes raw HTML", () => {
+    const html = md.renderHtml("<script>alert(1)</script>");
+    assertTrue(!html.includes("<script>"), "raw HTML should be escaped");
+    assertTrue(html.includes("&lt;script&gt;"));
+  });
+
+  it("preserves paragraph breaks", () => {
+    const html = md.renderHtml("first para\n\nsecond para");
+    assertTrue(html.includes("<p>first para</p>"));
+    assertTrue(html.includes("<p>second para</p>"));
+  });
+});
