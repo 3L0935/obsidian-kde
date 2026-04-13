@@ -1,6 +1,5 @@
 import QtQuick
 import org.kde.plasma.plasmoid
-import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import "components"
 
@@ -60,8 +59,10 @@ Item {
                 maxVelocity: Plasmoid.configuration.physicsMaxVelocity,
             })
             onNodeActivated: (path) => {
-                view.stateOwner.activeNotePath = path
-                view.stateOwner.currentView = "page"
+                if (view.stateOwner) {
+                    view.stateOwner.activeNotePath = path
+                    view.stateOwner.currentView = "page"
+                }
                 if (view.idleTimer) view.idleTimer.restart()
             }
         }
@@ -77,10 +78,12 @@ Item {
             fontSize: Plasmoid.configuration.pageFontSize
             showBackButton: Plasmoid.configuration.mode === "dynamic"
             onWikilinkClicked: (target) => {
-                for (const n of view.stateOwner.vault.allNotes()) {
-                    if (n.basename === target || n.path === target) {
-                        view.stateOwner.activeNotePath = n.path
-                        break
+                if (view.stateOwner && view.stateOwner.vault) {
+                    for (const n of view.stateOwner.vault.allNotes()) {
+                        if (n.basename === target || n.path === target) {
+                            view.stateOwner.activeNotePath = n.path
+                            break
+                        }
                     }
                 }
                 if (view.idleTimer) view.idleTimer.restart()
