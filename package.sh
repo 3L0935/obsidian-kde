@@ -29,5 +29,30 @@ if [[ "${1:-}" == "--install" ]]; then
     else
         kpackagetool6 -t Plasma/Applet -i "$OUT"
     fi
-    echo "installed. Restart plasmashell to see changes:  kquitapp6 plasmashell && kstart plasmashell"
+
+    # Qt 6 disables file:// XHR by default. The widget reads/writes markdown
+    # via XHR, so plasmashell needs these flags in its env. We drop a file
+    # into plasma-workspace/env which is sourced at every Plasma login.
+    ENV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/plasma-workspace/env/obsidian-widget.sh"
+    if [[ ! -f "$ENV_FILE" ]]; then
+        mkdir -p "$(dirname "$ENV_FILE")"
+        cat > "$ENV_FILE" <<'EOF'
+#!/bin/sh
+export QML_XHR_ALLOW_FILE_READ=1
+export QML_XHR_ALLOW_FILE_WRITE=1
+EOF
+        chmod +x "$ENV_FILE"
+        echo "wrote $ENV_FILE (QML_XHR_ALLOW_FILE_READ/WRITE)"
+        NEEDS_RELOGIN=1
+    fi
+
+    echo "installed."
+    if [[ "${NEEDS_RELOGIN:-0}" == "1" ]]; then
+        echo "First-time setup: log out and back in so plasmashell picks up the"
+        echo "new env vars, or run:"
+        echo "  systemctl --user set-environment QML_XHR_ALLOW_FILE_READ=1 QML_XHR_ALLOW_FILE_WRITE=1"
+        echo "  kquitapp6 plasmashell && kstart plasmashell"
+    else
+        echo "Restart plasmashell to see changes:  kquitapp6 plasmashell && kstart plasmashell"
+    fi
 fi
