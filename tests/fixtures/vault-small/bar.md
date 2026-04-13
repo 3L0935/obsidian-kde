@@ -1,0 +1,2 @@
+# Bar
+Back to [[foo]].
