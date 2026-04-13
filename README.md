@@ -39,8 +39,11 @@ Zero C++, zero Python, zero daemons — pure QML + JavaScript.
   `FolderListModel`-based async walking (no inotify backend required).
 
 ## Screenshots
+<img width="712" height="637" alt="image" src="https://github.com/user-attachments/assets/56b8d49a-86e1-49f1-a7d8-0594a95abccd" />
+<img width="635" height="406" alt="image" src="https://github.com/user-attachments/assets/532138d4-6c79-4f00-a4b7-ef43bc29327b" />
+<img width="621" height="585" alt="image" src="https://github.com/user-attachments/assets/43c03981-baf7-4fbf-9423-3f6b6648425d" />
+<img width="539" height="573" alt="image" src="https://github.com/user-attachments/assets/0572ca51-133b-4128-a606-39d7f5eb0052" />
 
-_TODO: add after first packaged release._
 
 ## Requirements
 
