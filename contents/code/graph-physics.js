@@ -2,13 +2,13 @@
 // Works under both Node and QML JS import.
 
 var PHYSICS_DEFAULTS = {
-    repulsion: 2000,
-    springLength: 80,
-    springK: 0.04,
-    centering: 0.02,
-    damping: 0.85,
+    repulsion: 1500,
+    springLength: 180,
+    springK: 0.012,
+    centering: 0.006,
+    damping: 0.92,
     theta: 0.8,
-    maxVelocity: 30,
+    maxVelocity: 20,
 };
 
 function createSimulation(opts) {
