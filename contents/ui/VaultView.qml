@@ -46,6 +46,7 @@ Item {
     Component {
         id: graphComponent
         GraphView {
+            id: graphInst
             vaultModel: view.stateOwner ? view.stateOwner.vault : null
             nodeColors: view.stateOwner ? view.stateOwner.nodeColors : ({})
             showLabels: Plasmoid.configuration.showLabels
@@ -64,6 +65,17 @@ Item {
                     view.stateOwner.currentView = "page"
                 }
                 if (view.idleTimer) view.idleTimer.restart()
+            }
+            onInteracted: {
+                if (!view.stateOwner || !view.stateOwner._rescanVault) return
+                view.stateOwner._rescanVault(function (diff) {
+                    graphInst.applyVaultDiff(diff)
+                })
+            }
+            onInteractionEnded: {
+                if (view.stateOwner && view.stateOwner._armRescan) {
+                    view.stateOwner._armRescan()
+                }
             }
         }
     }

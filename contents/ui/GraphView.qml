@@ -13,6 +13,8 @@ Item {
     onLabelFontSizeChanged: canvas.requestPaint()
     property var physicsConfig: null
     signal nodeActivated(string path)
+    signal interacted()
+    signal interactionEnded()
 
     property var sim: null
     property real panX: 0
@@ -37,6 +39,31 @@ Item {
         if (!root.selectedNodeId || !root.vaultModel) return ""
         const n = root.vaultModel.getNote(root.selectedNodeId)
         return n ? n.title : root.selectedNodeId
+    }
+
+    // Apply an on-demand rescan diff without rebuilding the simulation.
+    // Existing node positions stay put; new notes spawn near the centroid
+    // (see physics.addNode), removed notes drop out, and the full edge set
+    // is replaced so that wikilink resolution changes elsewhere in the vault
+    // also land on the canvas.
+    function applyVaultDiff(diff) {
+        if (!sim || !vaultModel || !diff) return
+        var touched = false
+        for (var i = 0; i < diff.removed.length; i++) {
+            sim.removeNode(diff.removed[i])
+            if (root.selectedNodeId === diff.removed[i]) root.selectedNodeId = ""
+            touched = true
+        }
+        for (var j = 0; j < diff.added.length; j++) {
+            sim.addNode({ id: diff.added[j] })
+            touched = true
+        }
+        if (diff.changed.length > 0) touched = true
+        if (touched) {
+            sim.setEdges(vaultModel.getEdges())
+            _wakePhysics()
+            canvas.requestPaint()
+        }
     }
 
     function _resetFromVault() {
@@ -216,6 +243,7 @@ Item {
         onPressed: (e) => {
             root.forceActiveFocus()
             root._wakePhysics()
+            root.interacted()
             dragStartX = e.x; dragStartY = e.y
             panStartX = root.panX; panStartY = root.panY
             movedSignificantly = false
@@ -253,6 +281,7 @@ Item {
                 root.sim.unpin(draggedNodeId)
                 draggedNodeId = ""
             }
+            root.interactionEnded()
         }
     }
 

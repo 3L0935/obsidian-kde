@@ -31,6 +31,10 @@ PlasmoidItem {
     property bool vaultReady: false
     property var nodeColors: ({})
     property bool overlayActive: false
+    property bool _rescanInFlight: false
+    // Re-armed on mouse release. Ensures a single rescan per press, even if
+    // the user drags, re-emits interacted(), or holds the button down.
+    property bool _rescanArmed: true
 
     FsHelper { id: fsHelper }
 
@@ -180,6 +184,34 @@ PlasmoidItem {
             root.currentView = "graph"
         }
     }
+
+    // On-demand rescan triggered by a graph press. One rescan per press:
+    // the flag disarms on fire and is only rearmed on mouse release, so a
+    // long drag or held button never re-triggers. The in-flight guard
+    // protects against racing callbacks if the async walk outlives a press.
+    function _rescanVault(onDone) {
+        if (!root.vault || !root.vaultReady) return
+        if (root._rescanInFlight || !root._rescanArmed) return
+        var vaultPath = Plasmoid.configuration.vaultPath
+        if (!vaultPath) return
+        root._rescanArmed = false
+        root._rescanInFlight = true
+        fsHelper.walkVault(vaultPath, function (files) {
+            try {
+                var diff = root.vault.rescanFiles(vaultPath, files)
+                if (diff.added.length || diff.changed.length || diff.removed.length) {
+                    root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                }
+                if (onDone) onDone(diff)
+            } catch (e) {
+                console.warn("[obsidian-kde] rescan failed:", e, e.stack)
+            } finally {
+                root._rescanInFlight = false
+            }
+        })
+    }
+
+    function _armRescan() { root._rescanArmed = true }
 
     function _toggleOverlay() {
         if (!Plasmoid.configuration.overlayEnabled) return

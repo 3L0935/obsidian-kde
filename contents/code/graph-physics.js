@@ -85,6 +85,18 @@ function createSimulation(opts) {
         }
     }
 
+    // Replace the whole edge set without touching node positions. Used after
+    // an on-demand vault rescan, where link resolution may have shifted
+    // across many notes but nodes should stay where the user left them.
+    function setEdges(edgeSpecs) {
+        edges.length = 0;
+        for (var e of edgeSpecs) {
+            if (nodeById.has(e.source) && nodeById.has(e.target)) {
+                edges.push({ source: e.source, target: e.target });
+            }
+        }
+    }
+
     function setPosition(id, x, y) {
         var n = nodeById.get(id);
         if (!n) return;
@@ -232,6 +244,7 @@ function createSimulation(opts) {
         removeNode: removeNode,
         addEdge: addEdge,
         removeEdge: removeEdge,
+        setEdges: setEdges,
         setPosition: setPosition,
         pin: pin,
         unpin: unpin,

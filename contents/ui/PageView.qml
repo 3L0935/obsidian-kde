@@ -54,6 +54,15 @@ Item {
         root.saveState = "saved"
     }
 
+    // Pick up external edits: the vault cache is only refreshed on saves
+    // through the app, so re-stat and reload when the user opens or returns
+    // to a note. Without this, external modifications stay invisible until
+    // the plasmoid is reloaded.
+    function _refreshIfStale() {
+        if (!vaultModel || !notePath) return
+        if (vaultModel.refreshNote(notePath)) root._reloadTick = root._reloadTick + 1
+    }
+
     function _discardChanges() {
         root.saveState = "saved"
     }
@@ -86,7 +95,12 @@ Item {
         onTriggered: root._saveNow()
     }
 
-    onNotePathChanged: { if (root.mode === "editing") _loadIntoEditor() }
+    onNotePathChanged: {
+        _refreshIfStale()
+        if (root.mode === "editing") _loadIntoEditor()
+    }
+
+    onVisibleChanged: { if (visible) _refreshIfStale() }
 
     Keys.onEscapePressed: {
         _flushOrDiscard()

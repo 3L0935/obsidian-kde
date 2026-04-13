@@ -63,4 +63,35 @@ describe("graph-physics", () => {
     sim.removeNode("b");
     assertEqual(sim.getNodes().length, 1);
   });
+
+  it("setEdges replaces the edge set without disturbing node positions", () => {
+    const sim = createSimulation();
+    sim.setGraph(
+      [{ id: "a" }, { id: "b" }, { id: "c" }],
+      [{ source: "a", target: "b" }]
+    );
+    sim.setPosition("a", 10, 20);
+    sim.setPosition("b", 30, 40);
+    sim.setPosition("c", 50, 60);
+    sim.setEdges([
+      { source: "a", target: "c" },
+      { source: "b", target: "c" },
+    ]);
+    const edges = sim.getEdges();
+    assertEqual(edges.length, 2);
+    const a = sim.getNode("a"), b = sim.getNode("b"), c = sim.getNode("c");
+    assertEqual(a.x, 10); assertEqual(a.y, 20);
+    assertEqual(b.x, 30); assertEqual(b.y, 40);
+    assertEqual(c.x, 50); assertEqual(c.y, 60);
+  });
+
+  it("setEdges drops edges referencing unknown nodes", () => {
+    const sim = createSimulation();
+    sim.setGraph([{ id: "a" }, { id: "b" }], []);
+    sim.setEdges([
+      { source: "a", target: "b" },
+      { source: "a", target: "ghost" },
+    ]);
+    assertEqual(sim.getEdges().length, 1);
+  });
 });
