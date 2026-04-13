@@ -11,6 +11,7 @@
         <entry name="idleTimeoutSec" type="Int">
             <default>30</default><min>5</min><max>600</max>
         </entry>
+        <entry name="autosaveEnabled" type="Bool"><default>true</default></entry>
         <entry name="autosaveDebounceMs" type="Int">
             <default>500</default><min>100</min><max>5000</max>
         </entry>
@@ -20,6 +21,24 @@
         </entry>
         <entry name="pageOpacity" type="Double">
             <default>0.95</default><min>0.0</min><max>1.0</max>
+        </entry>
+        <entry name="physicsRepulsion" type="Double">
+            <default>400.0</default><min>0.0</min><max>2000.0</max>
+        </entry>
+        <entry name="physicsSpringLength" type="Double">
+            <default>150.0</default><min>20.0</min><max>600.0</max>
+        </entry>
+        <entry name="physicsSpringK" type="Double">
+            <default>0.0025</default><min>0.0</min><max>0.02</max>
+        </entry>
+        <entry name="physicsCentering" type="Double">
+            <default>0.001</default><min>0.0</min><max>0.01</max>
+        </entry>
+        <entry name="physicsDamping" type="Double">
+            <default>0.85</default><min>0.7</min><max>0.99</max>
+        </entry>
+        <entry name="physicsMaxVelocity" type="Double">
+            <default>1.5</default><min>0.5</min><max>15.0</max>
         </entry>
     </group>
 </kcfg>

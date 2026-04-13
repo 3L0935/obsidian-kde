@@ -10,13 +10,24 @@ Item {
 
     property var vaultModel: null
     property string notePath: ""
+    property bool autosaveEnabled: true
     property int autosaveDebounceMs: 500
     property bool showBackButton: false
 
     signal wikilinkClicked(string target)
     signal dismissed()
 
-    readonly property var note: vaultModel && notePath ? vaultModel.getNote(notePath) : null
+    // _reloadTick is bumped after a successful save; reading it inside the
+    // `note` binding makes QML re-evaluate, which forces a fresh lookup from
+    // vaultModel after addOrUpdateNote replaced the underlying note object.
+    // Without this, `note` stays frozen on the stale reference and the
+    // rendered view keeps showing the pre-save content (hence "clicking View
+    // reverts").
+    property int _reloadTick: 0
+    readonly property var note: {
+        _reloadTick
+        return vaultModel && notePath ? vaultModel.getNote(notePath) : null
+    }
 
     property string mode: "rendered"
     property string saveState: "saved"
@@ -44,10 +55,17 @@ Item {
 
     function _saveNow() {
         if (!vaultModel || !note) return
-        const result = vaultModel.saveNote(note.path, editor.text, root.loadedMtime)
-        if (result.conflict) { root.saveState = "conflict"; return }
-        root.loadedMtime = result.mtime
-        root.saveState = "saved"
+        vaultModel.saveNote(note.path, editor.text, root.loadedMtime, function (err, result) {
+            if (err) {
+                console.warn("[obsidian-kde] save failed:", err && err.message)
+                root.saveState = "dirty"
+                return
+            }
+            if (result.conflict) { root.saveState = "conflict"; return }
+            root.loadedMtime = result.mtime
+            root._reloadTick = root._reloadTick + 1
+            root.saveState = "saved"
+        })
     }
 
     Timer {
@@ -68,16 +86,6 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        ConflictBanner {
-            Layout.fillWidth: true
-            visible: root.saveState === "conflict"
-            onReload: { root._loadIntoEditor() }
-            onOverwrite: {
-                root.loadedMtime = root.note ? root.note.mtime : 0
-                root._saveNow()
-            }
-        }
-
         RowLayout {
             Layout.fillWidth: true
             Layout.margins: 4
@@ -96,6 +104,14 @@ Item {
                 font.bold: true
                 Layout.fillWidth: true
                 elide: Label.ElideRight
+            }
+            Button {
+                visible: root.mode === "editing"
+                         && root.saveState === "dirty"
+                         && !root.autosaveEnabled
+                text: qsTr("Save")
+                highlighted: true
+                onClicked: root._saveNow()
             }
             Button {
                 text: root.mode === "rendered" ? qsTr("Edit") : qsTr("View")
@@ -144,7 +160,7 @@ Item {
                     onTextChanged: {
                         if (root.mode !== "editing") return
                         if (root.saveState !== "conflict") root.saveState = "dirty"
-                        debounceTimer.restart()
+                        if (root.autosaveEnabled) debounceTimer.restart()
                     }
                 }
             }

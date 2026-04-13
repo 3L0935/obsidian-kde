@@ -1,6 +1,10 @@
 // Qt/QML filesystem adapter matching the shape expected by vault.js.
-// readFileSync uses XMLHttpRequest on file:// URLs.
-// readdirSync, statSync, writeFileSync are provided by the QML host.
+//
+// readFileSync  — sync XHR GET on file:// (works in Qt 6).
+// writeFile     — ASYNC XHR PUT. Must be async: Qt 6.11's sync XHR PUT on
+//                 file:// opens the target but silently drops the body
+//                 (verified: 0-byte output). Only the async path writes.
+// readdirSync, statSync provided by the QML host.
 
 function create(Qt) {
   function readFileSync(absPath) {
@@ -13,12 +17,21 @@ function create(Qt) {
     return xhr.responseText;
   }
 
-  function writeFileSync(absPath, content) {
+  function writeFile(absPath, content, cb) {
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", "file://" + absPath, false);
-    xhr.send(content);
-    if (xhr.status !== 200 && xhr.status !== 0 && xhr.status !== 201) {
-      throw new Error("failed to write " + absPath + ": " + xhr.status);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      if (xhr.status !== 200 && xhr.status !== 0 && xhr.status !== 201) {
+        cb(new Error("failed to write " + absPath + ": " + xhr.status));
+      } else {
+        cb(null);
+      }
+    };
+    try {
+      xhr.open("PUT", "file://" + absPath, true);
+      xhr.send(content);
+    } catch (e) {
+      cb(e);
     }
   }
 
@@ -32,7 +45,7 @@ function create(Qt) {
 
   return {
     readFileSync: readFileSync,
-    writeFileSync: writeFileSync,
+    writeFile: writeFile,
     readdirSync: readdirSync,
     statSync: statSync,
     join: function (a, b) { return a.endsWith("/") ? a + b : a + "/" + b; },

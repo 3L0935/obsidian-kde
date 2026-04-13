@@ -177,17 +177,43 @@ function createVaultModel(opts) {
         emit("noteRemoved", rel);
     }
 
-    function saveNote(relPath, content, expectedMtimeMs) {
+    // Dual-mode: pass a callback to use an async fs.writeFile (required under
+    // QML — sync XHR PUT is broken on file:// in Qt 6.11). Without a callback
+    // we fall back to fs.writeFileSync, which is what the Node tests inject.
+    function saveNote(relPath, content, expectedMtimeMs, cb) {
         var note = notes.get(relPath);
-        if (!note) return { ok: false, conflict: false, mtime: 0 };
+        if (!note) {
+            var r0 = { ok: false, conflict: false, mtime: 0 };
+            if (cb) cb(null, r0);
+            return r0;
+        }
         var current = fs.statSync(note.absPath).mtimeMs;
         if (expectedMtimeMs && current > expectedMtimeMs + 1) {
-            return { ok: false, conflict: true, mtime: current };
+            var rc = { ok: false, conflict: true, mtime: current };
+            if (cb) cb(null, rc);
+            return rc;
         }
+
+        function finalize() {
+            addOrUpdateNote(note.absPath);
+            var updated = notes.get(relPath);
+            return { ok: true, conflict: false, mtime: updated.mtime };
+        }
+
+        if (cb) {
+            if (typeof fs.writeFile !== "function") {
+                cb(new Error("fs.writeFile not implemented"));
+                return;
+            }
+            fs.writeFile(note.absPath, content, function (err) {
+                if (err) { cb(err); return; }
+                cb(null, finalize());
+            });
+            return;
+        }
+
         fs.writeFileSync(note.absPath, content);
-        addOrUpdateNote(note.absPath);
-        var updated = notes.get(relPath);
-        return { ok: true, conflict: false, mtime: updated.mtime };
+        return finalize();
     }
 
     return {

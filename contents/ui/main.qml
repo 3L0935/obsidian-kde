@@ -104,6 +104,16 @@ PlasmoidItem {
         return base
     }
 
+    function _normalizePinnedPath(raw, vaultPath) {
+        if (!raw) return ""
+        var p = String(raw)
+        var base = vaultPath.endsWith("/") ? vaultPath : vaultPath + "/"
+        if (p.indexOf(base) === 0) p = p.slice(base.length)
+        else if (p === vaultPath) p = ""
+        if (p.charAt(0) === "/") p = p.slice(1)
+        return p
+    }
+
     function _initVault() {
         if (!Plasmoid.configuration.vaultPath) return
         const fs = _buildVaultFs()
@@ -121,7 +131,7 @@ PlasmoidItem {
         })
 
         if (Plasmoid.configuration.mode === "pinned" && Plasmoid.configuration.pinnedNote) {
-            root.activeNotePath = Plasmoid.configuration.pinnedNote
+            root.activeNotePath = _normalizePinnedPath(Plasmoid.configuration.pinnedNote, vaultPath)
             root.currentView = "page"
         } else {
             root.currentView = "graph"
@@ -136,7 +146,9 @@ PlasmoidItem {
         function onModeChanged() { _initVault() }
         function onPinnedNoteChanged() {
             if (Plasmoid.configuration.mode === "pinned") {
-                root.activeNotePath = Plasmoid.configuration.pinnedNote
+                root.activeNotePath = _normalizePinnedPath(
+                    Plasmoid.configuration.pinnedNote,
+                    Plasmoid.configuration.vaultPath)
                 root.currentView = "page"
             }
         }
@@ -192,6 +204,14 @@ PlasmoidItem {
                 vaultModel: root.vault
                 nodeColors: root.nodeColors
                 showLabels: Plasmoid.configuration.showLabels
+                physicsConfig: ({
+                    repulsion: Plasmoid.configuration.physicsRepulsion,
+                    springLength: Plasmoid.configuration.physicsSpringLength,
+                    springK: Plasmoid.configuration.physicsSpringK,
+                    centering: Plasmoid.configuration.physicsCentering,
+                    damping: Plasmoid.configuration.physicsDamping,
+                    maxVelocity: Plasmoid.configuration.physicsMaxVelocity,
+                })
                 onNodeActivated: (path) => {
                     root.activeNotePath = path
                     root.currentView = "page"
@@ -205,6 +225,7 @@ PlasmoidItem {
             PageView {
                 vaultModel: root.vault
                 notePath: root.activeNotePath
+                autosaveEnabled: Plasmoid.configuration.autosaveEnabled
                 autosaveDebounceMs: Plasmoid.configuration.autosaveDebounceMs
                 showBackButton: Plasmoid.configuration.mode === "dynamic"
                 onWikilinkClicked: (target) => {

@@ -84,13 +84,17 @@ QtObject {
         }
     }
 
-    // stat(absPath) → { mtimeMs } — best-effort synchronous; returns 0 if not found.
-    // Used by saveNote conflict detection; it's OK if slightly stale, the mtime
-    // check has a 1ms grace window.
+    // Per-path mtime cache. Qt/QML has no sync single-file stat, so we seed a
+    // stable value on first lookup and return it for every subsequent call.
+    // This means no false-positive conflicts in saveNote; it also means we
+    // cannot detect EXTERNAL mid-session changes (real conflict detection
+    // needs a filesystem watcher — out of scope for MVP).
+    property var _statCache: ({})
+
     function stat(absPath) {
-        // For the MVP we rely on reading the file and letting the next event
-        // loop update caches. Return a monotonically-increasing pseudo-mtime so
-        // saves never trigger false-positive conflicts.
-        return { mtimeMs: Date.now() }
+        if (_statCache[absPath] === undefined) {
+            _statCache[absPath] = Date.now()
+        }
+        return { mtimeMs: _statCache[absPath] }
     }
 }

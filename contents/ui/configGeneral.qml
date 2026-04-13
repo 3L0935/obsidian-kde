@@ -8,13 +8,23 @@ Kirigami.FormLayout {
     id: root
 
     property alias cfg_vaultPath: vaultPathField.text
-    property string cfg_mode: dynamicRadio.checked ? "dynamic" : "pinned"
+    // Plain (non-binding) property: plasmashell assigns cfg_mode on load, which
+    // would break a QML binding definitively. We keep it imperative and sync
+    // both ways via Component.onCompleted and the radios' onClicked.
+    property string cfg_mode: "dynamic"
     property alias cfg_pinnedNote: pinnedNoteField.text
     property alias cfg_idleTimeoutSec: idleTimeoutSpin.value
+    property alias cfg_autosaveEnabled: autosaveEnabledCheck.checked
     property alias cfg_autosaveDebounceMs: autosaveSpin.value
     property alias cfg_showLabels: showLabelsCheck.checked
     property alias cfg_graphOpacity: graphOpacitySpin.value
     property alias cfg_pageOpacity: pageOpacitySpin.value
+    property alias cfg_physicsRepulsion: physRepulsion.value
+    property alias cfg_physicsSpringLength: physSpringLen.value
+    property alias cfg_physicsSpringK: physSpringK.value
+    property alias cfg_physicsCentering: physCentering.value
+    property alias cfg_physicsDamping: physDamping.value
+    property alias cfg_physicsMaxVelocity: physMaxVel.value
 
     RowLayout {
         Kirigami.FormData.label: i18n("Vault path:")
@@ -36,16 +46,53 @@ Kirigami.FormLayout {
 
     RowLayout {
         Kirigami.FormData.label: i18n("Mode:")
-        RadioButton { id: dynamicRadio; text: i18n("Dynamic (graph → page)"); checked: true }
-        RadioButton { id: pinnedRadio;  text: i18n("Pinned page") }
+        ButtonGroup { id: modeGroup }
+        RadioButton {
+            id: dynamicRadio
+            ButtonGroup.group: modeGroup
+            text: i18n("Dynamic (graph → page)")
+            onClicked: root.cfg_mode = "dynamic"
+        }
+        RadioButton {
+            id: pinnedRadio
+            ButtonGroup.group: modeGroup
+            text: i18n("Pinned page")
+            onClicked: root.cfg_mode = "pinned"
+        }
     }
 
-    TextField {
-        id: pinnedNoteField
+    RowLayout {
         Kirigami.FormData.label: i18n("Pinned note:")
         Layout.fillWidth: true
-        enabled: pinnedRadio.checked
-        placeholderText: "folder/note.md"
+        TextField {
+            id: pinnedNoteField
+            Layout.fillWidth: true
+            enabled: pinnedRadio.checked
+            placeholderText: "folder/note.md (relative to vault)"
+        }
+        Button {
+            text: i18n("Browse…")
+            enabled: pinnedRadio.checked
+            onClicked: pinnedFileDialog.open()
+        }
+    }
+
+    FileDialog {
+        id: pinnedFileDialog
+        title: i18n("Pick a note inside the vault")
+        nameFilters: [i18n("Markdown (*.md)")]
+        currentFolder: vaultPathField.text ? "file://" + vaultPathField.text : ""
+        onAccepted: {
+            var abs = selectedFile.toString().replace("file://", "")
+            var vault = vaultPathField.text
+            if (vault && abs.indexOf(vault) === 0) {
+                var rel = abs.slice(vault.length)
+                if (rel.charAt(0) === "/") rel = rel.slice(1)
+                pinnedNoteField.text = rel
+            } else {
+                pinnedNoteField.text = abs
+            }
+        }
     }
 
     SpinBox {
@@ -54,10 +101,18 @@ Kirigami.FormLayout {
         from: 5; to: 600; value: 30
     }
 
+    CheckBox {
+        id: autosaveEnabledCheck
+        Kirigami.FormData.label: i18n("Autosave:")
+        text: i18n("Save automatically while typing")
+        checked: true
+    }
+
     SpinBox {
         id: autosaveSpin
         Kirigami.FormData.label: i18n("Autosave debounce (ms):")
         from: 100; to: 5000; stepSize: 50; value: 500
+        enabled: autosaveEnabledCheck.checked
     }
 
     CheckBox {
@@ -87,7 +142,87 @@ Kirigami.FormLayout {
         Label { text: Math.round(pageOpacitySpin.value * 100) + "%" }
     }
 
+    Kirigami.Separator {
+        Kirigami.FormData.isSection: true
+        Kirigami.FormData.label: i18n("Graph physics")
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Repel force:")
+        Slider {
+            id: physRepulsion
+            from: 0.0; to: 2000.0; stepSize: 20.0
+            Layout.fillWidth: true
+        }
+        Label { text: Math.round(physRepulsion.value); Layout.minimumWidth: 48 }
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Link length:")
+        Slider {
+            id: physSpringLen
+            from: 20.0; to: 600.0; stepSize: 5.0
+            Layout.fillWidth: true
+        }
+        Label { text: Math.round(physSpringLen.value); Layout.minimumWidth: 48 }
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Link force:")
+        Slider {
+            id: physSpringK
+            from: 0.0; to: 0.02; stepSize: 0.0005
+            Layout.fillWidth: true
+        }
+        Label { text: physSpringK.value.toFixed(4); Layout.minimumWidth: 48 }
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Center gravity:")
+        Slider {
+            id: physCentering
+            from: 0.0; to: 0.01; stepSize: 0.0002
+            Layout.fillWidth: true
+        }
+        Label { text: physCentering.value.toFixed(4); Layout.minimumWidth: 48 }
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Damping:")
+        Slider {
+            id: physDamping
+            from: 0.7; to: 0.99; stepSize: 0.005
+            Layout.fillWidth: true
+        }
+        Label { text: physDamping.value.toFixed(3); Layout.minimumWidth: 48 }
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Max speed:")
+        Slider {
+            id: physMaxVel
+            from: 0.5; to: 15.0; stepSize: 0.5
+            Layout.fillWidth: true
+        }
+        Label { text: physMaxVel.value.toFixed(1); Layout.minimumWidth: 48 }
+    }
+
+    Button {
+        Kirigami.FormData.label: ""
+        text: i18n("Reset physics to defaults")
+        onClicked: {
+            physRepulsion.value = 400.0
+            physSpringLen.value = 150.0
+            physSpringK.value = 0.0025
+            physCentering.value = 0.001
+            physDamping.value = 0.85
+            physMaxVel.value = 1.5
+        }
+    }
+
     Component.onCompleted: {
+        // Sync radios to the plain cfg_mode value plasmashell just wrote.
         if (cfg_mode === "pinned") pinnedRadio.checked = true
+        else dynamicRadio.checked = true
     }
 }

@@ -1,14 +1,17 @@
 // Pure JS force-directed simulation with Barnes-Hut quadtree.
 // Works under both Node and QML JS import.
 
+// Floaty defaults — gradual motion, no snap. Dominated by maxVelocity
+// (per-tick cap) and the absolute magnitude of the force constants. Users
+// can tune all six via the config page.
 var PHYSICS_DEFAULTS = {
-    repulsion: 1500,
-    springLength: 180,
-    springK: 0.012,
-    centering: 0.006,
-    damping: 0.92,
+    repulsion: 400,
+    springLength: 150,
+    springK: 0.0025,
+    centering: 0.001,
+    damping: 0.85,
     theta: 0.8,
-    maxVelocity: 20,
+    maxVelocity: 1.5,
 };
 
 function createSimulation(opts) {
@@ -216,6 +219,13 @@ function createSimulation(opts) {
         return ke;
     }
 
+    function updateConfig(opts) {
+        if (!opts) return;
+        for (var k in opts) {
+            if (opts[k] !== undefined && opts[k] !== null) cfg[k] = opts[k];
+        }
+    }
+
     return {
         setGraph: setGraph,
         addNode: addNode,
@@ -226,6 +236,7 @@ function createSimulation(opts) {
         pin: pin,
         unpin: unpin,
         tick: tick,
+        updateConfig: updateConfig,
         getNodes: function () { return nodes; },
         getNode: function (id) { return nodeById.get(id) || null; },
         getEdges: function () { return edges; },
