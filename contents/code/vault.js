@@ -122,6 +122,23 @@ function createVaultModel(opts) {
         emit("ready");
     }
 
+    function scanFiles(rp, absPathList) {
+        rootPath = rp;
+        notes.clear();
+        byBasename.clear();
+        for (var abs of absPathList) {
+            try {
+                var note = parseNoteFile(abs);
+                notes.set(note.path, note);
+                indexBasename(note);
+            } catch (e) {
+                // skip unreadable files
+            }
+        }
+        resolveAllLinks();
+        emit("ready");
+    }
+
     function noteCount() { return notes.size; }
     function getNote(relPath) { return notes.get(relPath) || null; }
     function allNotes() { return Array.from(notes.values()); }
@@ -173,6 +190,7 @@ function createVaultModel(opts) {
 
     return {
         scan: scan,
+        scanFiles: scanFiles,
         on: on,
         noteCount: noteCount,
         getNote: getNote,

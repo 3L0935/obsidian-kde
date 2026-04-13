@@ -26,7 +26,7 @@ PlasmoidItem {
 
     function _buildVaultFs() {
         const base = QmlFs.create(Qt)
-        base.readdirSync = function (p) { return fsHelper.listDir(p) }
+        // readdirSync is no longer used — walkVault handles the async walk
         base.statSync = function (p) { return fsHelper.stat(p) }
         return base
     }
@@ -36,11 +36,17 @@ PlasmoidItem {
         const fs = _buildVaultFs()
         root.vault = VaultJs.createVaultModel({ fs: fs, markdown: MarkdownJs })
         root.vault.on("ready", function () { root.vaultReady = true })
-        try {
-            root.vault.scan(Plasmoid.configuration.vaultPath)
-        } catch (e) {
-            console.warn("vault scan failed:", e)
-        }
+
+        const vaultPath = Plasmoid.configuration.vaultPath
+        fsHelper.walkVault(vaultPath, function (files) {
+            console.warn("[obsidian-kde] walk complete:", files.length, "markdown files under", vaultPath)
+            try {
+                root.vault.scanFiles(vaultPath, files)
+            } catch (e) {
+                console.warn("[obsidian-kde] scanFiles failed:", e, e.stack)
+            }
+        })
+
         if (Plasmoid.configuration.mode === "pinned" && Plasmoid.configuration.pinnedNote) {
             root.activeNotePath = Plasmoid.configuration.pinnedNote
             root.currentView = "page"
