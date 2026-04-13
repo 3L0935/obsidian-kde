@@ -37,6 +37,11 @@ Zero C++, zero Python, zero daemons — pure QML + JavaScript.
   so the graph can sit translucent on your wallpaper while notes stay readable.
 - **Live filesystem sync** — vault changes on disk propagate via
   `FolderListModel`-based async walking (no inotify backend required).
+- **Fullscreen overlay hotkey** — opt-in per instance: assign a global
+  shortcut (default `Meta+O`) to toggle a fullscreen, fully interactive
+  overlay of the widget on the screen of the currently active window,
+  with configurable dim level. Close with the same shortcut, `Escape`,
+  or by clicking another application. Works on X11 and Wayland.
 
 ## Screenshots
 <img width="712" height="637" alt="image" src="https://github.com/user-attachments/assets/56b8d49a-86e1-49f1-a7d8-0594a95abccd" />
@@ -165,6 +170,23 @@ All live (changes apply without reset), with a *Reset physics to defaults* butto
 | Center gravity | 0.0010  | 0 – 0.01     | Pull toward the origin.                |
 | Damping        | 0.850   | 0.7 – 0.99   | Velocity retention per tick.           |
 | Max speed      | 1.5     | 0.5 – 15     | Per-tick velocity cap. Keeps motion floaty. |
+
+### Overlay hotkey
+
+Opt-in per instance. Leave disabled on instances you don't want owning the
+global shortcut (if multiple widgets are placed, only the one with this
+setting enabled will respond).
+
+| Setting              | Default   | Description                                                                |
+|----------------------|-----------|----------------------------------------------------------------------------|
+| Enable global shortcut | off     | Per-instance opt-in. Must be on for this widget to handle the shortcut.    |
+| Toggle shortcut      | `Meta+O`  | Shows/hides the fullscreen overlay. Also changeable via System Settings → Shortcuts. |
+| Dim level            | 75 %      | Opacity of the overlay's dark backdrop.                                    |
+| Close on focus loss  | on        | Auto-hide the overlay when another window takes focus.                     |
+
+The overlay appears on the screen of the currently active window (queried
+via KWin DBus, works on both X11 and Wayland). Press `Escape` once to exit
+an in-progress edit, press again to close the overlay.
 
 Multiple instances are fully independent — you can drop a `pinned` card for a
 project TODO and a `dynamic` graph for navigating, side by side.
