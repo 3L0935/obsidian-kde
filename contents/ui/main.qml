@@ -32,9 +32,10 @@ PlasmoidItem {
     property var nodeColors: ({})
     property bool overlayActive: false
     property bool _rescanInFlight: false
-    // Re-armed on mouse release. Ensures a single rescan per press, even if
-    // the user drags, re-emits interacted(), or holds the button down.
-    property bool _rescanArmed: true
+    // Bumped when a rescan reveals that the currently-open note was modified
+    // externally. PageView reads this tick in its note binding to re-pull
+    // fresh content from the vault cache after the async walk completes.
+    property int _pageReloadTick: 0
 
     FsHelper { id: fsHelper }
 
@@ -168,9 +169,10 @@ PlasmoidItem {
         root.vault.on("ready", function () { root.vaultReady = true })
 
         const vaultPath = Plasmoid.configuration.vaultPath
-        fsHelper.walkVault(vaultPath, function (files) {
+        fsHelper.walkVault(vaultPath, function (entries) {
             try {
-                root.vault.scanFiles(vaultPath, files)
+                var paths = entries.map(function (e) { return e.path })
+                root.vault.scanFiles(vaultPath, paths)
                 root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
             } catch (e) {
                 console.warn("[obsidian-kde] scanFiles failed:", e, e.stack)
@@ -185,22 +187,28 @@ PlasmoidItem {
         }
     }
 
-    // On-demand rescan triggered by a graph press. One rescan per press:
-    // the flag disarms on fire and is only rearmed on mouse release, so a
-    // long drag or held button never re-triggers. The in-flight guard
-    // protects against racing callbacks if the async walk outlives a press.
+    // On-demand vault rescan. Only guard is _rescanInFlight so a caller
+    // whose press lands while the previous walk is still running gets
+    // dropped rather than queued. Per-press debouncing lives inside the
+    // caller (GraphView has its own press-session armed flag), keeping
+    // this function reusable from any entry point that wants a refresh
+    // (graph press, PageView navigation, pinned mode open).
     function _rescanVault(onDone) {
         if (!root.vault || !root.vaultReady) return
-        if (root._rescanInFlight || !root._rescanArmed) return
+        if (root._rescanInFlight) return
         var vaultPath = Plasmoid.configuration.vaultPath
         if (!vaultPath) return
-        root._rescanArmed = false
         root._rescanInFlight = true
-        fsHelper.walkVault(vaultPath, function (files) {
+        fsHelper.walkVault(vaultPath, function (entries) {
             try {
-                var diff = root.vault.rescanFiles(vaultPath, files)
+                var diff = root.vault.rescanFiles(vaultPath, entries)
                 if (diff.added.length || diff.changed.length || diff.removed.length) {
                     root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                }
+                // If the currently-displayed note was modified externally,
+                // nudge PageView so its binding re-reads from the cache.
+                if (root.activeNotePath && diff.changed.indexOf(root.activeNotePath) >= 0) {
+                    root._pageReloadTick = root._pageReloadTick + 1
                 }
                 if (onDone) onDone(diff)
             } catch (e) {
@@ -210,8 +218,6 @@ PlasmoidItem {
             }
         })
     }
-
-    function _armRescan() { root._rescanArmed = true }
 
     function _toggleOverlay() {
         if (!Plasmoid.configuration.overlayEnabled) return

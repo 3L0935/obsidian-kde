@@ -168,17 +168,22 @@ function createVaultModel(opts) {
     }
 
     // On-demand rescan driven by user interaction instead of a watcher.
-    // Compares the incoming absolute-path list against the cached index,
-    // adds newly-seen files, reloads entries whose mtime advanced, and drops
-    // notes that vanished from disk. Returns the per-category relPath lists
-    // so the caller can apply an incremental diff (preserve graph positions).
-    function rescanFiles(rp, absPathList) {
+    // Takes a list of {path, mtime} entries produced by the directory walk
+    // (FolderListModel exposes fileModified for free) and compares each
+    // entry's mtime against the cached note's mtime. This keeps rescanFiles
+    // pure — no fs.statSync calls — which matters under QML where a real
+    // single-file stat isn't cheap. Returns {added, changed, removed} lists
+    // of relPaths so the caller can apply an incremental diff without
+    // rebuilding the full graph.
+    function rescanFiles(rp, entries) {
         rootPath = rp;
         var seen = new Set();
         var added = [];
         var changed = [];
         var removed = [];
-        for (var abs of absPathList) {
+        for (var entry of entries) {
+            var abs = entry.path;
+            var entryMtime = entry.mtime || 0;
             seen.add(abs);
             var rel = relativize(abs).split(fs.sep).join("/");
             var existing = notes.get(rel);
@@ -193,40 +198,26 @@ function createVaultModel(opts) {
                 }
                 continue;
             }
-            try {
-                var current = fs.statSync(abs).mtimeMs;
-                if (current > existing.mtime + 1) {
+            if (entryMtime > existing.mtime + 1) {
+                try {
                     addOrUpdateNote(abs);
                     changed.push(rel);
+                } catch (e) {
+                    if (typeof console !== "undefined") {
+                        console.warn("[vault] rescan reload failed:", abs, e && e.message);
+                    }
                 }
-            } catch (e) { /* ignore stat errors */ }
+            }
         }
         var toRemove = [];
-        for (var entry of notes) {
-            if (!seen.has(entry[1].absPath)) toRemove.push(entry[1]);
+        for (var mapEntry of notes) {
+            if (!seen.has(mapEntry[1].absPath)) toRemove.push(mapEntry[1]);
         }
         for (var note of toRemove) {
             removed.push(note.path);
             removeNote(note.absPath);
         }
         return { added: added, changed: changed, removed: removed };
-    }
-
-    function refreshNote(relPath) {
-        var note = notes.get(relPath);
-        if (!note) return false;
-        try {
-            var current = fs.statSync(note.absPath).mtimeMs;
-            if (current > note.mtime + 1) {
-                addOrUpdateNote(note.absPath);
-                return true;
-            }
-        } catch (e) {
-            if (typeof console !== "undefined") {
-                console.warn("[vault] refreshNote stat failed:", relPath, e && e.message);
-            }
-        }
-        return false;
     }
 
     function removeNote(absPath) {
@@ -288,7 +279,6 @@ function createVaultModel(opts) {
         getEdges: getEdges,
         addOrUpdateNote: addOrUpdateNote,
         rescanFiles: rescanFiles,
-        refreshNote: refreshNote,
         removeNote: removeNote,
         saveNote: saveNote,
     };

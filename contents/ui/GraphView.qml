@@ -13,8 +13,12 @@ Item {
     onLabelFontSizeChanged: canvas.requestPaint()
     property var physicsConfig: null
     signal nodeActivated(string path)
-    signal interacted()
-    signal interactionEnded()
+    signal requestRescan()
+
+    // Press-session debouncing: one rescan per press, re-armed on release.
+    // A long drag or held button therefore produces a single request, and
+    // pressing again only after releasing is what counts as a new "intent".
+    property bool _pressRescanArmed: true
 
     property var sim: null
     property real panX: 0
@@ -243,7 +247,10 @@ Item {
         onPressed: (e) => {
             root.forceActiveFocus()
             root._wakePhysics()
-            root.interacted()
+            if (root._pressRescanArmed) {
+                root._pressRescanArmed = false
+                root.requestRescan()
+            }
             dragStartX = e.x; dragStartY = e.y
             panStartX = root.panX; panStartY = root.panY
             movedSignificantly = false
@@ -281,7 +288,7 @@ Item {
                 root.sim.unpin(draggedNodeId)
                 draggedNodeId = ""
             }
-            root.interactionEnded()
+            root._pressRescanArmed = true
         }
     }
 

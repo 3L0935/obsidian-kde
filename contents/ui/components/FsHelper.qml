@@ -9,8 +9,10 @@ QtObject {
     property int _nextToken: 0
 
     // walkVault(rootPath, doneCallback)
-    //   Recursively walks rootPath, collecting absolute paths of all *.md files.
-    //   Calls doneCallback(absPathList) once the walk is complete.
+    //   Recursively walks rootPath, collecting {path, mtime} entries for all
+    //   *.md files. The mtime is read from FolderListModel's fileModified role
+    //   (free during the walk) so no follow-up stat pass is needed.
+    //   Calls doneCallback(entries) once the walk is complete.
     //   Uses asynchronous FolderListModel instances; callback fires after event loop turns.
     function walkVault(rootPath, doneCallback) {
         const state = {
@@ -56,7 +58,14 @@ QtObject {
                     if (isDir) {
                         _walkOne(full, state)
                     } else if (name.endsWith(".md")) {
-                        state.files.push(full)
+                        // fileModified is exposed as a JS Date by FolderListModel.
+                        // Fall back to 0 if the role is unavailable; rescanFiles
+                        // treats 0 as "unknown mtime, always reload on first sight".
+                        const modified = model.get(i, "fileModified")
+                        const mtime = modified && typeof modified.getTime === "function"
+                            ? modified.getTime()
+                            : 0
+                        state.files.push({ path: full, mtime: mtime })
                     }
                 }
             } finally {

@@ -133,53 +133,6 @@ describe("VaultModel.saveNote", () => {
   });
 });
 
-describe("VaultModel.refreshNote", () => {
-  function setupTempVault() {
-    const tmp = path.join(__dirname, "_tmp_refresh_" + Date.now());
-    fs.mkdirSync(tmp);
-    fs.writeFileSync(path.join(tmp, "a.md"), "# original");
-    return tmp;
-  }
-  function cleanup(tmp) {
-    for (const f of fs.readdirSync(tmp)) fs.unlinkSync(path.join(tmp, f));
-    fs.rmdirSync(tmp);
-  }
-
-  it("reloads note content after external modification", () => {
-    const tmp = setupTempVault();
-    try {
-      const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
-      vm.scan(tmp);
-      assertTrue(vm.getNote("a.md").content.includes("original"), "initial cache");
-      const busyUntil = Date.now() + 20;
-      while (Date.now() < busyUntil) { /* spin */ }
-      fs.writeFileSync(path.join(tmp, "a.md"), "# externally changed");
-      const changed = vm.refreshNote("a.md");
-      assertTrue(changed, "refreshNote should report a reload");
-      assertTrue(vm.getNote("a.md").content.includes("externally changed"), "cache updated");
-    } finally { cleanup(tmp); }
-  });
-
-  it("is a no-op when mtime is unchanged", () => {
-    const tmp = setupTempVault();
-    try {
-      const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
-      vm.scan(tmp);
-      const changed = vm.refreshNote("a.md");
-      assertTrue(!changed, "no reload when file is untouched");
-    } finally { cleanup(tmp); }
-  });
-
-  it("returns false for unknown notes", () => {
-    const tmp = setupTempVault();
-    try {
-      const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
-      vm.scan(tmp);
-      assertTrue(!vm.refreshNote("does-not-exist.md"), "unknown note");
-    } finally { cleanup(tmp); }
-  });
-});
-
 describe("VaultModel.rescanFiles", () => {
   function setupTempVault() {
     const tmp = path.join(__dirname, "_tmp_rescan_" + Date.now() + "_" + Math.floor(Math.random() * 1e6));
@@ -192,8 +145,16 @@ describe("VaultModel.rescanFiles", () => {
     for (const f of fs.readdirSync(tmp)) fs.unlinkSync(path.join(tmp, f));
     fs.rmdirSync(tmp);
   }
-  function listAbs(tmp) {
-    return fs.readdirSync(tmp).filter(f => f.endsWith(".md")).map(f => path.join(tmp, f));
+  // Mirrors what FsHelper.walkVault produces under QML: list of
+  // {path, mtime} entries, mtime sourced from the directory walk so
+  // rescanFiles never needs to stat individual files.
+  function walkEntries(tmp) {
+    return fs.readdirSync(tmp)
+      .filter(f => f.endsWith(".md"))
+      .map(f => {
+        const abs = path.join(tmp, f);
+        return { path: abs, mtime: fs.statSync(abs).mtimeMs };
+      });
   }
 
   it("detects newly added files", () => {
@@ -202,7 +163,7 @@ describe("VaultModel.rescanFiles", () => {
       const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
       vm.scan(tmp);
       fs.writeFileSync(path.join(tmp, "c.md"), "# C");
-      const diff = vm.rescanFiles(tmp, listAbs(tmp));
+      const diff = vm.rescanFiles(tmp, walkEntries(tmp));
       assertDeepEqual(diff.added, ["c.md"]);
       assertEqual(diff.changed.length, 0);
       assertEqual(diff.removed.length, 0);
@@ -210,7 +171,7 @@ describe("VaultModel.rescanFiles", () => {
     } finally { cleanup(tmp); }
   });
 
-  it("detects externally modified files", () => {
+  it("detects externally modified files via walk mtime", () => {
     const tmp = setupTempVault();
     try {
       const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
@@ -218,9 +179,24 @@ describe("VaultModel.rescanFiles", () => {
       const busyUntil = Date.now() + 20;
       while (Date.now() < busyUntil) { /* spin */ }
       fs.writeFileSync(path.join(tmp, "b.md"), "# B updated");
-      const diff = vm.rescanFiles(tmp, listAbs(tmp));
+      const diff = vm.rescanFiles(tmp, walkEntries(tmp));
       assertDeepEqual(diff.changed, ["b.md"]);
       assertTrue(vm.getNote("b.md").content.includes("updated"), "content reloaded");
+    } finally { cleanup(tmp); }
+  });
+
+  it("ignores a file whose walk mtime is stale (no redundant reload)", () => {
+    const tmp = setupTempVault();
+    try {
+      const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
+      vm.scan(tmp);
+      const before = vm.getNote("b.md").mtime;
+      // Feed an entry with an older mtime than the cache — should be a no-op.
+      const diff = vm.rescanFiles(tmp, [
+        { path: path.join(tmp, "a.md"), mtime: before },
+        { path: path.join(tmp, "b.md"), mtime: before - 1000 },
+      ]);
+      assertEqual(diff.changed.length, 0, "stale walk mtime should not trigger reload");
     } finally { cleanup(tmp); }
   });
 
@@ -230,7 +206,7 @@ describe("VaultModel.rescanFiles", () => {
       const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
       vm.scan(tmp);
       fs.unlinkSync(path.join(tmp, "b.md"));
-      const diff = vm.rescanFiles(tmp, listAbs(tmp));
+      const diff = vm.rescanFiles(tmp, walkEntries(tmp));
       assertDeepEqual(diff.removed, ["b.md"]);
       assertTrue(vm.getNote("b.md") === null, "removed note dropped");
     } finally { cleanup(tmp); }
@@ -245,7 +221,7 @@ describe("VaultModel.rescanFiles", () => {
       vm.scan(tmp);
       assertEqual(vm.getNote("a.md").outgoingLinks.length, 0);
       fs.writeFileSync(path.join(tmp, "c.md"), "# C");
-      vm.rescanFiles(tmp, listAbs(tmp));
+      vm.rescanFiles(tmp, walkEntries(tmp));
       assertDeepEqual(vm.getNote("a.md").outgoingLinks, ["c.md"]);
     } finally { cleanup(tmp); }
   });
@@ -255,7 +231,7 @@ describe("VaultModel.rescanFiles", () => {
     try {
       const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
       vm.scan(tmp);
-      const diff = vm.rescanFiles(tmp, listAbs(tmp));
+      const diff = vm.rescanFiles(tmp, walkEntries(tmp));
       assertEqual(diff.added.length, 0);
       assertEqual(diff.changed.length, 0);
       assertEqual(diff.removed.length, 0);

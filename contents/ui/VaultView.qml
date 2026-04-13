@@ -66,16 +66,11 @@ Item {
                 }
                 if (view.idleTimer) view.idleTimer.restart()
             }
-            onInteracted: {
+            onRequestRescan: {
                 if (!view.stateOwner || !view.stateOwner._rescanVault) return
                 view.stateOwner._rescanVault(function (diff) {
                     graphInst.applyVaultDiff(diff)
                 })
-            }
-            onInteractionEnded: {
-                if (view.stateOwner && view.stateOwner._armRescan) {
-                    view.stateOwner._armRescan()
-                }
             }
         }
     }
@@ -85,10 +80,16 @@ Item {
         PageView {
             vaultModel: view.stateOwner ? view.stateOwner.vault : null
             notePath: view.stateOwner ? view.stateOwner.activeNotePath : ""
+            reloadTick: view.stateOwner ? view.stateOwner._pageReloadTick : 0
             autosaveEnabled: Plasmoid.configuration.autosaveEnabled
             autosaveDebounceMs: Plasmoid.configuration.autosaveDebounceMs
             fontSize: Plasmoid.configuration.pageFontSize
             showBackButton: Plasmoid.configuration.mode === "dynamic"
+            onRequestVaultRescan: {
+                if (view.stateOwner && view.stateOwner._rescanVault) {
+                    view.stateOwner._rescanVault(null)
+                }
+            }
             onWikilinkClicked: (target) => {
                 if (view.stateOwner && view.stateOwner.vault) {
                     for (const n of view.stateOwner.vault.allNotes()) {

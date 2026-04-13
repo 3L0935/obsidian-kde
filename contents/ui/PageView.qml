@@ -14,9 +14,18 @@ Item {
     property int autosaveDebounceMs: 500
     property int fontSize: 10
     property bool showBackButton: false
+    // External tick bumped by main.qml when a vault rescan discovered that
+    // the currently-open note was modified externally. Reading it inside
+    // the `note` binding forces a fresh vaultModel lookup so the rendered
+    // view picks up the new content without needing a plasmoid reload.
+    property int reloadTick: 0
 
     signal wikilinkClicked(string target)
     signal dismissed()
+    // Asks the host to run a vault rescan. Fires on note open so that
+    // wikilink navigation or pinned-mode opens still see external edits,
+    // even when the user didn't interact with the graph first.
+    signal requestVaultRescan()
 
     // _reloadTick is bumped after a successful save; reading it inside the
     // `note` binding makes QML re-evaluate, which forces a fresh lookup from
@@ -27,6 +36,7 @@ Item {
     property int _reloadTick: 0
     readonly property var note: {
         _reloadTick
+        reloadTick
         return vaultModel && notePath ? vaultModel.getNote(notePath) : null
     }
 
@@ -54,14 +64,6 @@ Item {
         root.saveState = "saved"
     }
 
-    // Pick up external edits: the vault cache is only refreshed on saves
-    // through the app, so re-stat and reload when the user opens or returns
-    // to a note. Without this, external modifications stay invisible until
-    // the plasmoid is reloaded.
-    function _refreshIfStale() {
-        if (!vaultModel || !notePath) return
-        if (vaultModel.refreshNote(notePath)) root._reloadTick = root._reloadTick + 1
-    }
 
     function _discardChanges() {
         root.saveState = "saved"
@@ -96,11 +98,11 @@ Item {
     }
 
     onNotePathChanged: {
-        _refreshIfStale()
+        if (notePath) root.requestVaultRescan()
         if (root.mode === "editing") _loadIntoEditor()
     }
 
-    onVisibleChanged: { if (visible) _refreshIfStale() }
+    onVisibleChanged: { if (visible && notePath) root.requestVaultRescan() }
 
     Keys.onEscapePressed: {
         _flushOrDiscard()
