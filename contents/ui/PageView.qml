@@ -12,6 +12,7 @@ Item {
     property string notePath: ""
     property bool autosaveEnabled: true
     property int autosaveDebounceMs: 500
+    property int fontSize: 10
     property bool showBackButton: false
 
     signal wikilinkClicked(string target)
@@ -53,6 +54,16 @@ Item {
         root.saveState = "saved"
     }
 
+    function _discardChanges() {
+        root.saveState = "saved"
+    }
+
+    function _flushOrDiscard() {
+        if (root.saveState !== "dirty") return
+        if (root.autosaveEnabled) _saveNow()
+        else _discardChanges()
+    }
+
     function _saveNow() {
         if (!vaultModel || !note) return
         vaultModel.saveNote(note.path, editor.text, root.loadedMtime, function (err, result) {
@@ -78,7 +89,7 @@ Item {
     onNotePathChanged: { if (root.mode === "editing") _loadIntoEditor() }
 
     Keys.onEscapePressed: {
-        if (root.saveState === "dirty") _saveNow()
+        _flushOrDiscard()
         root.dismissed()
     }
 
@@ -94,7 +105,7 @@ Item {
                 text: "←"
                 flat: true
                 onClicked: {
-                    if (root.saveState === "dirty") _saveNow()
+                    _flushOrDiscard()
                     root.dismissed()
                 }
             }
@@ -120,7 +131,7 @@ Item {
                         root._loadIntoEditor()
                         root.mode = "editing"
                     } else {
-                        if (root.saveState === "dirty") root._saveNow()
+                        root._flushOrDiscard()
                         root.mode = "rendered"
                     }
                 }
@@ -138,6 +149,7 @@ Item {
                     readOnly: true
                     textFormat: TextEdit.RichText
                     wrapMode: TextEdit.Wrap
+                    font.pointSize: root.fontSize
                     text: root._renderedHtml()
                     selectByMouse: true
                     color: Kirigami.Theme.textColor
@@ -156,6 +168,7 @@ Item {
                 TextArea {
                     id: editor
                     font.family: "monospace"
+                    font.pointSize: root.fontSize
                     wrapMode: TextEdit.Wrap
                     onTextChanged: {
                         if (root.mode !== "editing") return

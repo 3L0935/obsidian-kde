@@ -204,6 +204,7 @@ PlasmoidItem {
                 vaultModel: root.vault
                 nodeColors: root.nodeColors
                 showLabels: Plasmoid.configuration.showLabels
+                labelFontSize: Plasmoid.configuration.graphLabelFontSize
                 physicsConfig: ({
                     repulsion: Plasmoid.configuration.physicsRepulsion,
                     springLength: Plasmoid.configuration.physicsSpringLength,
@@ -227,6 +228,7 @@ PlasmoidItem {
                 notePath: root.activeNotePath
                 autosaveEnabled: Plasmoid.configuration.autosaveEnabled
                 autosaveDebounceMs: Plasmoid.configuration.autosaveDebounceMs
+                fontSize: Plasmoid.configuration.pageFontSize
                 showBackButton: Plasmoid.configuration.mode === "dynamic"
                 onWikilinkClicked: (target) => {
                     for (const n of root.vault.allNotes()) {

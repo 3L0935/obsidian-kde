@@ -25,6 +25,8 @@ Kirigami.FormLayout {
     property alias cfg_physicsCentering: physCentering.value
     property alias cfg_physicsDamping: physDamping.value
     property alias cfg_physicsMaxVelocity: physMaxVel.value
+    property alias cfg_pageFontSize: pageFontSpin.value
+    property alias cfg_graphLabelFontSize: graphLabelFontSpin.value
 
     RowLayout {
         Kirigami.FormData.label: i18n("Vault path:")
@@ -113,6 +115,18 @@ Kirigami.FormLayout {
         Kirigami.FormData.label: i18n("Autosave debounce (ms):")
         from: 100; to: 5000; stepSize: 50; value: 500
         enabled: autosaveEnabledCheck.checked
+    }
+
+    SpinBox {
+        id: pageFontSpin
+        Kirigami.FormData.label: i18n("Page font size:")
+        from: 6; to: 32; value: 10
+    }
+
+    SpinBox {
+        id: graphLabelFontSpin
+        Kirigami.FormData.label: i18n("Graph label font size:")
+        from: 6; to: 32; value: 10
     }
 
     CheckBox {

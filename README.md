@@ -54,19 +54,37 @@ Zero C++, zero Python, zero daemons — pure QML + JavaScript.
 
 ## Install
 
+> ⚠️ **Before anything else, read ["Required: allow local file reads and
+> writes"](#required-allow-local-file-reads-and-writes)**. The widget will
+> **not** work without those two env vars — it's a Qt 6 / Plasma 6 sandbox
+> thing, not something the plasmoid can opt into by itself.
+
+### Option A — scripted (recommended)
+
 ```bash
 # from a clone of this repo
 ./package.sh --install
 ```
 
-Or manually:
+This builds the `.plasmoid`, installs (or upgrades) it via `kpackagetool6`,
+**and** writes the env file described below on first install. Log out and
+back in once, and you're done.
+
+### Option B — manual (from the prebuilt `.plasmoid` on the Releases page or a local build)
 
 ```bash
-./package.sh
-kpackagetool6 -t Plasma/Applet -i obsidianwidget-0.3.0.plasmoid
-# to update later:
-kpackagetool6 -t Plasma/Applet -u obsidianwidget-0.3.0.plasmoid
+# download obsidianwidget-<version>.plasmoid from the Releases page
+# (or build one locally with ./package.sh)
+
+# first install:
+kpackagetool6 -t Plasma/Applet -i obsidianwidget-<version>.plasmoid
+# updates later:
+kpackagetool6 -t Plasma/Applet -u obsidianwidget-<version>.plasmoid
 ```
+
+**Manual installs do NOT set the required env vars for you** — you must do
+the "Required: allow local file reads and writes" step below yourself, or the
+widget will just sit on "Loading vault…" forever.
 
 Then add "Obsidian Vault" from your Plasma widget picker.
 
@@ -78,27 +96,39 @@ widget uses XHR to read your markdown files and to write edits back, so
 (vault walks but no content parses); without `WRITE` editing a note looks
 fine on screen but nothing is saved to disk.
 
-`package.sh --install` creates the env file for you. If you install the
-`.plasmoid` directly with `kpackagetool6`, set it up manually:
+There are two ways to set the flags. **You want the persistent one unless
+you're just poking at it.**
+
+#### Persistent (survives reboots) — do this one
 
 ```bash
 mkdir -p ~/.config/plasma-workspace/env
 cat > ~/.config/plasma-workspace/env/obsidian-widget.sh <<'EOF'
+#!/bin/sh
 export QML_XHR_ALLOW_FILE_READ=1
 export QML_XHR_ALLOW_FILE_WRITE=1
 EOF
 chmod +x ~/.config/plasma-workspace/env/obsidian-widget.sh
 ```
 
-The file is sourced on login by `plasma-workspace`, so the vars end up in
-`plasmashell`'s environment. You need to **log out and back in** for this to
-take effect, or restart `plasmashell` in place after exporting the vars into
-the user systemd environment:
+`~/.config/plasma-workspace/env/*.sh` is sourced by `plasma-workspace` on
+every Plasma login, so the vars end up in `plasmashell`'s environment
+permanently. **Log out and back in** for it to take effect.
+
+(This is exactly what `./package.sh --install` writes for you on first run.)
+
+#### Non-persistent (current session only, no logout)
+
+If you can't/don't want to log out right now, you can inject the vars into
+the running user-systemd environment and restart plasmashell in place:
 
 ```bash
 systemctl --user set-environment QML_XHR_ALLOW_FILE_READ=1 QML_XHR_ALLOW_FILE_WRITE=1
 kquitapp6 plasmashell && kstart plasmashell
 ```
+
+This is **lost on reboot** — it's meant as a quick test, not a real install.
+You still want the persistent version above if you plan to keep the widget.
 
 Diagnosis tip: if the widget stays on "Loading vault…", check
 `journalctl --user -n 200 | grep obsidian` — you'll see

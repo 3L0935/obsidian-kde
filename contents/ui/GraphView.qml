@@ -9,6 +9,8 @@ Item {
     property var vaultModel: null
     property var nodeColors: ({})
     property bool showLabels: true
+    property int labelFontSize: 10
+    onLabelFontSizeChanged: canvas.requestPaint()
     property var physicsConfig: null
     signal nodeActivated(string path)
 
@@ -120,7 +122,7 @@ Item {
 
             if (root.showLabels && root.zoom > 0.6) {
                 ctx.fillStyle = Kirigami.Theme.textColor
-                ctx.font = (10 / root.zoom) + "px sans-serif"
+                ctx.font = (root.labelFontSize / root.zoom) + "px sans-serif"
                 ctx.textAlign = "center"
                 for (const n of nodes) {
                     const note = root.vaultModel.getNote(n.id)
