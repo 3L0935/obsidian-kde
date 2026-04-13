@@ -53,9 +53,18 @@ PlasmoidItem {
     }
 
     function _matchQuery(query, note) {
-        var clauses = query.split(/\s+OR\s+/)
-        for (var i = 0; i < clauses.length; i++) {
-            if (_matchClause(clauses[i], note)) return true
+        // OR = union (any group matches); whitespace within a group = AND (all clauses match).
+        // Mirrors Obsidian's graph color-group query semantics.
+        var orGroups = query.split(/\s+OR\s+/)
+        for (var i = 0; i < orGroups.length; i++) {
+            var group = orGroups[i].trim()
+            if (!group) continue
+            var clauses = group.split(/\s+/)
+            var allMatch = true
+            for (var j = 0; j < clauses.length; j++) {
+                if (!_matchClause(clauses[j], note)) { allMatch = false; break }
+            }
+            if (allMatch) return true
         }
         return false
     }

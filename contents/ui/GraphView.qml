@@ -96,14 +96,44 @@ Item {
             ctx.translate(width / 2 + root.panX, height / 2 + root.panY)
             ctx.scale(root.zoom, root.zoom)
 
-            ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4)
-            ctx.lineWidth = 1 / root.zoom
             const edges = root.sim.getEdges()
             const nodes = root.sim.getNodes()
             const byId = {}
             for (const n of nodes) byId[n.id] = n
+
+            // When a node is selected, build the set of "focused" ids
+            // (the node itself + its direct neighbors). Everything else is
+            // dimmed and its label hidden, mirroring Obsidian's hover focus.
+            const hasSelection = root.selectedNodeId !== "" && byId[root.selectedNodeId]
+            const focused = {}
+            if (hasSelection) {
+                focused[root.selectedNodeId] = true
+                for (const e of edges) {
+                    if (e.source === root.selectedNodeId) focused[e.target] = true
+                    else if (e.target === root.selectedNodeId) focused[e.source] = true
+                }
+            }
+            const dimAlpha = 0.3
+
+            ctx.lineWidth = 1 / root.zoom
+            // Dimmed edges first
+            if (hasSelection) {
+                ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4 * dimAlpha)
+                ctx.beginPath()
+                for (const e of edges) {
+                    if (focused[e.source] && focused[e.target]) continue
+                    const a = byId[e.source], b = byId[e.target]
+                    if (!a || !b) continue
+                    ctx.moveTo(a.x, a.y)
+                    ctx.lineTo(b.x, b.y)
+                }
+                ctx.stroke()
+            }
+            // Normal edges
+            ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4)
             ctx.beginPath()
             for (const e of edges) {
+                if (hasSelection && !(focused[e.source] && focused[e.target])) continue
                 const a = byId[e.source], b = byId[e.target]
                 if (!a || !b) continue
                 ctx.moveTo(a.x, a.y)
@@ -114,17 +144,20 @@ Item {
             const defaultColor = Kirigami.Theme.highlightColor
             const colors = root.nodeColors || {}
             for (const n of nodes) {
+                ctx.globalAlpha = (hasSelection && !focused[n.id]) ? dimAlpha : 1.0
                 ctx.fillStyle = colors[n.id] || defaultColor
                 ctx.beginPath()
                 ctx.arc(n.x, n.y, 5, 0, Math.PI * 2)
                 ctx.fill()
             }
+            ctx.globalAlpha = 1.0
 
             if (root.showLabels && root.zoom > 0.6) {
                 ctx.fillStyle = Kirigami.Theme.textColor
                 ctx.font = (root.labelFontSize / root.zoom) + "px sans-serif"
                 ctx.textAlign = "center"
                 for (const n of nodes) {
+                    if (hasSelection && !focused[n.id]) continue
                     const note = root.vaultModel.getNote(n.id)
                     if (note) ctx.fillText(note.title, n.x, n.y - 10)
                 }
