@@ -20,6 +20,9 @@ Zero C++, zero Python, zero daemons — pure QML + JavaScript.
 - **Click to select, button to open** — single click highlights a node,
   a *Open: &lt;title&gt;* button appears, `Enter` / `Space` also activates.
   Double-click is left to plasmashell for widget move/resize.
+- **Focus mode** — clicking a node dims unrelated nodes/edges and
+  spotlights the selection and its direct neighbors, so the local
+  subgraph pops out of a dense vault.
 - **Rendered + edit modes** — click a node to read the note, click *Edit*
   to tweak it. Choose between **autosave** (debounced, silent) or **manual
   save** (explicit Save button that only appears while dirty — no flashing).
@@ -35,8 +38,16 @@ Zero C++, zero Python, zero daemons — pure QML + JavaScript.
     to type the path.
 - **Configurable opacity** — independent sliders for graph view and page view
   so the graph can sit translucent on your wallpaper while notes stay readable.
-- **Live filesystem sync** — vault changes on disk propagate via
-  `FolderListModel`-based async walking (no inotify backend required).
+- **External edits picked up without reload** — notes changed on disk by
+  another editor, sync client, or script surface in the widget without a
+  plasmoid reload, with no background watcher or inotify:
+  - Opening a note re-stats it and reloads from disk if the mtime moved,
+    so rendered view always reflects the latest on-disk content.
+  - Interacting with the graph (any press session) triggers an async
+    vault rescan that diffs against the cached index and incrementally
+    adds new nodes, drops removed ones, and re-resolves wikilinks —
+    **node positions are preserved**, no layout reset. One rescan per
+    press, in-flight presses are dropped, long drags never re-trigger.
 - **Fullscreen overlay hotkey** — opt-in per instance: assign a global
   shortcut (default `Meta+O`) to toggle a fullscreen, fully interactive
   overlay of the widget on the screen of the currently active window,
@@ -195,7 +206,8 @@ project TODO and a `dynamic` graph for navigating, side by side.
 
 What works:
 
-- Standard markdown (headings, lists, code blocks, bold/italic, links)
+- Standard markdown (headings, lists, code blocks, bold/italic, links,
+  tables, horizontal rules, preserved blank lines)
 - Frontmatter (YAML subset: scalars, `aliases`, `tags`, arrays)
 - `[[wikilinks]]` and `[[wikilinks|alias]]`
 - Inline `#tags`
