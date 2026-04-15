@@ -69,8 +69,8 @@ describe("parseFrontmatter", () => {
 describe("renderHtml", () => {
   it("renders headings", () => {
     const html = md.renderHtml("# Hello\n## World");
-    assertTrue(html.includes("<h1>Hello</h1>"));
-    assertTrue(html.includes("<h2>World</h2>"));
+    assertTrue(html.includes(">Hello</h1>"));
+    assertTrue(html.includes(">World</h2>"));
   });
 
   it("renders bold and italic", () => {
@@ -117,7 +117,7 @@ describe("renderHtml", () => {
 
   it("preserves paragraph breaks", () => {
     const html = md.renderHtml("first para\n\nsecond para");
-    assertTrue(html.includes("<p>first para</p>"));
-    assertTrue(html.includes("<p>second para</p>"));
+    assertTrue(html.includes(">first para</p>"));
+    assertTrue(html.includes(">second para</p>"));
   });
 });

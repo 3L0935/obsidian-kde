@@ -121,7 +121,7 @@ function renderHtml(text) {
         var hm = line.match(/^(#{1,6})\s+(.*)$/);
         if (hm) {
             var level = hm[1].length;
-            out.push("<h" + level + ">" + renderInline(hm[2]) + "</h" + level + ">");
+            out.push("<h" + level + " style=\"margin-top:4px;margin-bottom:2px\">" + renderInline(hm[2]) + "</h" + level + ">");
             i++;
             continue;
         }
@@ -193,7 +193,7 @@ function renderHtml(text) {
             pbuf.push(lines[i]);
             i++;
         }
-        out.push("<p>" + renderInline(pbuf.join(" ")) + "</p>");
+        out.push("<p style=\"margin-top:0;margin-bottom:0\">" + pbuf.map(renderInline).join("<br/>") + "</p>");
     }
 
     return out.join("\n");

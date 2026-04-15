@@ -160,8 +160,10 @@ Item {
             currentIndex: root.mode === "rendered" ? 0 : 1
 
             ScrollView {
+                id: renderedScroll
+                contentWidth: availableWidth
                 TextEdit {
-                    width: parent.width
+                    width: renderedScroll.availableWidth
                     readOnly: true
                     textFormat: TextEdit.RichText
                     wrapMode: TextEdit.Wrap
