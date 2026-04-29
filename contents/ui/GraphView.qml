@@ -139,12 +139,23 @@ Item {
             }
             var t0 = Date.now()
             root.sim.tick()
-            root._probe.record("tick", Date.now() - t0)
-            // Throttle only: at rest we tick at 5 FPS. Never fully stop —
+            var tickMs = Date.now() - t0
+            root._probe.record("tick", tickMs)
+            // Throttle: at rest we tick at 5 FPS. Never fully stop —
             // resuming from a hard stop causes visible snaps because velocity
             // residuals balance the graph and re-applying forces after a gap
             // produces sudden jumps.
-            interval = root.sim.kineticEnergy() < 0.5 ? 200 : 16
+            // LOD throttle: when a single tick is already heavy (zoomed-out
+            // view of a dense graph), there's no point trying to run at 60Hz.
+            // Cap the tick rate so the UI stays responsive — physics will
+            // run at whatever pace the workload allows.
+            if (root.sim.kineticEnergy() < 0.5) {
+                interval = 200
+            } else if (tickMs > 50) {
+                interval = Math.max(33, tickMs)  // adapt: aim for never more than 1 tick worth of "behind"
+            } else {
+                interval = 16
+            }
             canvas.requestPaint()
         }
     }
@@ -225,6 +236,14 @@ Item {
             var eLen = edges.length
             var nLen = nodes.length
 
+            // LOD: at low zoom on dense graphs, edges are visually a mess —
+            // a tangle of overlapping thin strokes. Skipping them entirely
+            // both helps perf (no 25k Canvas lineTo calls) AND makes the dot
+            // pattern more readable. Threshold tuned for 5000-node fixture:
+            // below zoom 0.3 with > 500 edges, edges are dropped. Always
+            // drawn under selection so neighbors are visible.
+            var skipEdges = (!hasSelection && root.zoom < 0.3 && eLen > 500)
+
             ctx.lineWidth = 1 / root.zoom
             // Dimmed edges first
             if (hasSelection) {
@@ -242,28 +261,33 @@ Item {
                 ctx.stroke()
             }
             // Normal edges
-            ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4)
-            ctx.beginPath()
-            for (var ei = 0; ei < eLen; ei++) {
-                var e = edges[ei]
-                if (hasSelection && !(focused[e.source] && focused[e.target])) continue
-                var ea = e.a, eb = e.b
-                if (!ea || !eb) continue
-                if (!ea._inView && !eb._inView) continue
-                ctx.moveTo(ea.x, ea.y)
-                ctx.lineTo(eb.x, eb.y)
+            if (!skipEdges) {
+                ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4)
+                ctx.beginPath()
+                for (var ei = 0; ei < eLen; ei++) {
+                    var e = edges[ei]
+                    if (hasSelection && !(focused[e.source] && focused[e.target])) continue
+                    var ea = e.a, eb = e.b
+                    if (!ea || !eb) continue
+                    if (!ea._inView && !eb._inView) continue
+                    ctx.moveTo(ea.x, ea.y)
+                    ctx.lineTo(eb.x, eb.y)
+                }
+                ctx.stroke()
             }
-            ctx.stroke()
 
             const defaultColor = Kirigami.Theme.highlightColor
             const colors = root.nodeColors || {}
+            // LOD: at low zoom on dense graphs, draw nodes a touch smaller so
+            // they don't merge into a flat blob. Otherwise default 5px works.
+            var nodeRadius = 5
             for (var ni = 0; ni < nLen; ni++) {
                 var nn = nodes[ni]
                 if (!nn._inView) continue
                 ctx.globalAlpha = (hasSelection && !focused[nn.id]) ? dimAlpha : 1.0
                 ctx.fillStyle = colors[nn.id] || defaultColor
                 ctx.beginPath()
-                ctx.arc(nn.x, nn.y, 5, 0, Math.PI * 2)
+                ctx.arc(nn.x, nn.y, nodeRadius, 0, Math.PI * 2)
                 ctx.fill()
             }
             ctx.globalAlpha = 1.0
