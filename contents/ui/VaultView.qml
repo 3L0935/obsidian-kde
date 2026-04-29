@@ -77,6 +77,13 @@ Item {
                     graphInst.applyVaultDiff(diff)
                 })
             }
+            onSimReady: (s) => {
+                if (!view.stateOwner) return
+                view.stateOwner._currentSim = s
+                if (view.stateOwner._applyCachedPositionsToSim) {
+                    view.stateOwner._applyCachedPositionsToSim()
+                }
+            }
         }
     }
 

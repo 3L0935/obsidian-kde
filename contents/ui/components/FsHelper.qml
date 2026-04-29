@@ -106,4 +106,38 @@ QtObject {
         }
         return { mtimeMs: _statCache[absPath] }
     }
+
+    // readJsonFile / writeJsonFile: same XHR file:// pattern used elsewhere
+    // (see _loadGraphConfig in main.qml). cb receives parsed object or null
+    // on read; cb receives a boolean on write. All async — Qt 6 doesn't
+    // reliably support sync XHR over file:// URLs.
+    function readJsonFile(absPath, cb) {
+        const xhr = new XMLHttpRequest()
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return
+            if (xhr.status !== 200 && xhr.status !== 0) { cb(null); return }
+            try { cb(JSON.parse(xhr.responseText)) } catch (e) { cb(null) }
+        }
+        try {
+            xhr.open("GET", "file://" + absPath, true)
+            xhr.send(null)
+        } catch (e) {
+            cb(null)
+        }
+    }
+
+    function writeJsonFile(absPath, obj, cb) {
+        const xhr = new XMLHttpRequest()
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return
+            const ok = xhr.status === 200 || xhr.status === 0 || xhr.status === 201
+            if (cb) cb(ok)
+        }
+        try {
+            xhr.open("PUT", "file://" + absPath, true)
+            xhr.send(JSON.stringify(obj))
+        } catch (e) {
+            if (cb) cb(false)
+        }
+    }
 }

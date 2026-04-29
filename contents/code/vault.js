@@ -121,6 +121,37 @@ function createVaultModel(opts) {
         emit("ready");
     }
 
+    function hydrateFromCache(rp, cachedNotes) {
+        // CRITICAL: set rootPath BEFORE constructing absPaths. Without this,
+        // loadNoteContent would fail for every cached note that the
+        // subsequent rescan doesn't re-parse.
+        rootPath = rp;
+        notes.clear();
+        byBasename.clear();
+        var sep = fs.sep;
+        var sepEnd = rp.endsWith(sep);
+        for (var i = 0; i < cachedNotes.length; i++) {
+            var c = cachedNotes[i];
+            var relWithSep = c.path.split("/").join(sep);
+            var note = {
+                path: c.path,
+                absPath: rp + (sepEnd ? "" : sep) + relWithSep,
+                basename: c.basename,
+                title: c.title,
+                frontmatter: c.frontmatter || {},
+                aliases: c.aliases || [],
+                tags: c.tags || [],
+                wikilinksRaw: c.wikilinksRaw || [],
+                outgoingLinks: c.outgoingLinks || [],
+                mtime: c.mtime || 0,
+            };
+            notes.set(note.path, note);
+            indexBasename(note);
+        }
+        resolveAllLinks();
+        emit("ready");
+    }
+
     function scanFiles(rp, absPathList) {
         rootPath = rp;
         notes.clear();
@@ -320,6 +351,7 @@ function createVaultModel(opts) {
         scan: scan,
         scanFiles: scanFiles,
         scanFilesAsync: scanFilesAsync,
+        hydrateFromCache: hydrateFromCache,
         on: on,
         noteCount: noteCount,
         getNote: getNote,

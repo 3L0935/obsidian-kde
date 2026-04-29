@@ -16,6 +16,10 @@ Item {
     property var physicsConfig: null
     signal nodeActivated(string path)
     signal requestRescan()
+    // Emitted after _resetFromVault has built a fresh simulation. main.qml
+    // wires this up so it can apply cached node positions and stash a
+    // reference for the periodic cache-save loop.
+    signal simReady(var simInstance)
 
     // Press-session debouncing: one rescan per press, re-armed on release.
     // A long drag or held button therefore produces a single request, and
@@ -110,6 +114,9 @@ Item {
         const nodeSpecs = notes.map(function (n) { return { id: n.path } })
         const edges = vaultModel.getEdges()
         sim.setGraph(nodeSpecs, edges)
+        // Hand the freshly-built sim up so main.qml can apply cached
+        // positions and the cache writer can read live ones.
+        root.simReady(sim)
         _wakePhysics()
         canvas.requestPaint()
     }

@@ -10,6 +10,7 @@ import "../code/vault.js" as VaultJs
 import "../code/markdown.js" as MarkdownJs
 import "../code/qml-fs.js" as QmlFs
 import "../code/screen-resolver.js" as ScreenResolver
+import "../code/index-cache.js" as IndexCache
 
 PlasmoidItem {
     id: root
@@ -37,6 +38,15 @@ PlasmoidItem {
     // fresh content from the vault cache after the async walk completes.
     property int _pageReloadTick: 0
     property int lastRssKb: 0
+    // Persistent index-cache state: resolved on first save, then reused.
+    // _cachedPositions holds {path: {x,y}} from a hydrated cache so the
+    // GraphView simulation can apply them once the sim is created (the sim
+    // doesn't exist at hydrate time, only after vaultReady triggers the
+    // GraphView delegate). _currentSim is set by VaultView when its
+    // GraphView mounts so _saveCache can read live positions.
+    property string _cacheDirPath: ""
+    property var _cachedPositions: ({})
+    property var _currentSim: null
 
     FsHelper { id: fsHelper }
 
@@ -76,6 +86,25 @@ PlasmoidItem {
             var out = ((data && data["stdout"]) || "").trim()
             var m = out.match(/(\d+)/)
             if (m) root.lastRssKb = parseInt(m[1], 10)
+        }
+    }
+
+    // Separate DataSource so the cache-dir resolution doesn't collide with
+    // dbusRunner's _pendingCallback (e.g. if the user activates the overlay
+    // shortcut during the initial $HOME query). _cb is per-instance.
+    Plasma5Support.DataSource {
+        id: cacheRunner
+        engine: "executable"
+        connectedSources: []
+        property var _cb: null
+        onNewData: (sourceName, data) => {
+            disconnectSource(sourceName)
+            var out = ((data && data["stdout"]) || "").trim()
+            if (_cb) { var f = _cb; _cb = null; f(out) }
+        }
+        function run(cmd, cb) {
+            _cb = cb
+            connectSource(cmd)
         }
     }
 
@@ -177,6 +206,82 @@ PlasmoidItem {
         return base
     }
 
+    // Cheap djb2 hash so we can have one cache file per vault path without
+    // worrying about path-encoding collisions across filesystems. Result
+    // is hex-encoded; collisions on practical vault-path counts are nil.
+    function _hashStr(s) {
+        var h = 5381
+        for (var i = 0; i < s.length; i++) {
+            h = ((h << 5) + h) + s.charCodeAt(i)
+            h = h & 0xffffffff
+        }
+        return (h >>> 0).toString(16)
+    }
+
+    function _cachePath(vaultPath) {
+        if (!root._cacheDirPath) return ""
+        return root._cacheDirPath + "/" + _hashStr(vaultPath) + ".json"
+    }
+
+    // Resolve $HOME via the executable engine once, then mkdir -p the
+    // cache dir. Subsequent calls hit the cached value. Both shell calls
+    // are sequential — _cb is single-slot but never overlaps here.
+    function _resolveCacheDir(cb) {
+        if (root._cacheDirPath) { cb(root._cacheDirPath); return }
+        cacheRunner.run("echo $HOME", function (home) {
+            if (!home) { cb(""); return }
+            root._cacheDirPath = home + "/.cache/obsidian-kde"
+            cacheRunner.run("mkdir -p " + JSON.stringify(root._cacheDirPath), function () {
+                cb(root._cacheDirPath)
+            })
+        })
+    }
+
+    function _saveCache() {
+        if (!root.vault || !Plasmoid.configuration.vaultPath || !root._cacheDirPath) return
+        var positions = {}
+        if (root._currentSim) {
+            try {
+                var nodes = root._currentSim.getNodes()
+                for (var i = 0; i < nodes.length; i++) {
+                    positions[nodes[i].id] = { x: nodes[i].x, y: nodes[i].y }
+                }
+            } catch (e) {
+                // sim may have been torn down between vaultReady toggles —
+                // fall through with empty positions, the cache still beats
+                // a full re-walk on next launch.
+            }
+        }
+        var blob = IndexCache.serializeIndex({
+            vaultPath: Plasmoid.configuration.vaultPath,
+            notes: root.vault.allNotes(),
+            positions: positions,
+        })
+        var p = _cachePath(Plasmoid.configuration.vaultPath)
+        fsHelper.writeJsonFile(p, blob, function (ok) {
+            if (!ok) console.warn("[obsidian-kde] cache write failed:", p)
+        })
+    }
+
+    // Apply cached positions to a freshly-built simulation. Called by
+    // VaultView when it sets _currentSim after mounting GraphView. Only
+    // touches nodes for which we have a stored (non-zero) position; the
+    // others keep their random spawn so newly-added notes blend in.
+    function _applyCachedPositionsToSim() {
+        if (!root._currentSim) return
+        var pos = root._cachedPositions || {}
+        if (Object.keys(pos).length === 0) return
+        try {
+            var nodes = root._currentSim.getNodes()
+            for (var i = 0; i < nodes.length; i++) {
+                var p = pos[nodes[i].id]
+                if (p) { nodes[i].x = p.x; nodes[i].y = p.y }
+            }
+        } catch (e) {
+            console.warn("[obsidian-kde] applyCachedPositions failed:", e)
+        }
+    }
+
     function _normalizePinnedPath(raw, vaultPath) {
         if (!raw) return ""
         var p = String(raw)
@@ -194,8 +299,13 @@ PlasmoidItem {
         root.vault.on("ready", function () { root.vaultReady = true })
 
         const vaultPath = Plasmoid.configuration.vaultPath
-        fsHelper.walkVault(vaultPath, function (entries) {
-            try {
+        // Reset any stale cached positions left from a previous vault.
+        root._cachedPositions = ({})
+
+        _resolveCacheDir(function () {
+            var cachePath = _cachePath(vaultPath)
+            // No cache dir resolved → fall through to full scan only.
+            var doFullScan = function (entries) {
                 var paths = entries.map(function (e) { return e.path })
                 root.vault.scanFilesAsync(vaultPath, paths, 200,
                     function (done, total) {
@@ -203,10 +313,44 @@ PlasmoidItem {
                     },
                     function () {
                         root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                        _saveCache()
                     }
                 )
-            } catch (e) {
-                console.warn("[obsidian-kde] scanFilesAsync failed:", e, e.stack)
+            }
+
+            var afterCacheRead = function (cacheBlob) {
+                var hydrated = cacheBlob ? IndexCache.hydrateIndex(cacheBlob) : null
+                fsHelper.walkVault(vaultPath, function (entries) {
+                    try {
+                        if (hydrated && hydrated.vaultPath === vaultPath) {
+                            // Fast path: hydrate metadata from cache, then
+                            // diff against the walk. rescanFiles re-parses
+                            // only mtime-changed files, leaves the rest alone.
+                            root.vault.hydrateFromCache(vaultPath, hydrated.notes)
+                            root.vault.rescanFiles(vaultPath, entries)
+                            // Stash positions so VaultView can apply them
+                            // when it mounts GraphView.
+                            var pos = {}
+                            for (var i = 0; i < hydrated.notes.length; i++) {
+                                var hn = hydrated.notes[i]
+                                if (hn.x !== 0 || hn.y !== 0) pos[hn.path] = { x: hn.x, y: hn.y }
+                            }
+                            root._cachedPositions = pos
+                            root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                            _saveCache()
+                        } else {
+                            doFullScan(entries)
+                        }
+                    } catch (e) {
+                        console.warn("[obsidian-kde] _initVault failed:", e, e.stack)
+                    }
+                })
+            }
+
+            if (cachePath) {
+                fsHelper.readJsonFile(cachePath, afterCacheRead)
+            } else {
+                fsHelper.walkVault(vaultPath, doFullScan)
             }
         })
 
@@ -216,6 +360,17 @@ PlasmoidItem {
         } else {
             root.currentView = "graph"
         }
+    }
+
+    // Periodic cache writer so positions and any newly-added notes
+    // (rescan after a press, etc.) get persisted without waiting for
+    // a clean shutdown signal we don't have.
+    Timer {
+        id: cacheSaveTimer
+        interval: 30000
+        repeat: true
+        running: root.vaultReady
+        onTriggered: _saveCache()
     }
 
     // On-demand vault rescan. Only guard is _rescanInFlight so a caller
