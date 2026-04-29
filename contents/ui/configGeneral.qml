@@ -5,8 +5,11 @@ import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 import org.kde.kquickcontrols as KQC
 
-Kirigami.FormLayout {
+// Wrap the FormLayout in a ScrollView so the config dialog stays usable when
+// the window is shorter than the form. Plasma KCM doesn't wrap automatically.
+ScrollView {
     id: root
+    contentWidth: availableWidth
 
     property alias cfg_vaultPath: vaultPathField.text
     // Plain (non-binding) property: plasmashell assigns cfg_mode on load, which
@@ -34,6 +37,9 @@ Kirigami.FormLayout {
     property alias cfg_overlayCloseOnFocusLost: overlayCloseOnFocusCheck.checked
     property alias cfg_perfDebug: perfDebugCheck.checked
     property alias cfg_perfAutoPauseHidden: perfAutoPauseHiddenCheck.checked
+
+Kirigami.FormLayout {
+    width: root.availableWidth
 
     RowLayout {
         Kirigami.FormData.label: i18n("Vault path:")
@@ -304,4 +310,5 @@ Kirigami.FormLayout {
         else dynamicRadio.checked = true
         overlayShortcutField.keySequence = cfg_overlayShortcut
     }
-}
+}  // FormLayout
+}  // ScrollView

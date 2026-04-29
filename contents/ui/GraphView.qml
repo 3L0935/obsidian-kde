@@ -292,7 +292,10 @@ Item {
             }
             ctx.globalAlpha = 1.0
 
-            if (root.showLabels && root.zoom > 0.6) {
+            // LOD: labels are illegible at low zoom anyway and represent the
+            // bulk of paint cost (per-glyph fillText). Threshold 1.0 means
+            // labels appear only at native zoom or closer.
+            if (root.showLabels && root.zoom > 1.0) {
                 ctx.fillStyle = Kirigami.Theme.textColor
                 ctx.font = (root.labelFontSize / root.zoom) + "px sans-serif"
                 ctx.textAlign = "center"
