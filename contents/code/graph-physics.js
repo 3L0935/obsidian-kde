@@ -20,6 +20,8 @@ function createSimulation(opts) {
     var nodeById = new Map();
     var edges = [];
     var frozenBounds = null;  // { minX, minY, maxX, maxY } or null when no freeze active
+    var _tickCounter = 0;     // monotonic; tags edges already processed in current tick
+    var _pinned = [];         // nodes currently pinned (fx !== null)
     // Set by setGraph before any randomPos() call, so spawn radius can scale
     // with the FINAL expected node count rather than the (still-growing) live
     // array length during construction.
@@ -47,10 +49,53 @@ function createSimulation(opts) {
         return { id: spec.id, x: p.x, y: p.y, vx: 0, vy: 0, fx: null, fy: null };
     }
 
+    // Edges store direct refs (a, b) to their endpoint node objects, avoiding
+    // 50k+ Map.get() calls per tick on a 25k-edge graph. Each node carries an
+    // _edges list of incident edges so the spring loop can iterate per active
+    // node instead of walking the whole edge set. _seenTick is a per-edge
+    // visit marker for dedup when iterating per-node.
+    function _resolveEdge(e) {
+        e.a = nodeById.get(e.source) || null;
+        e.b = nodeById.get(e.target) || null;
+        e._seenTick = 0;
+    }
+
+    function _addEdgeToIndex(e) {
+        if (e.a) {
+            if (!e.a._edges) e.a._edges = [];
+            e.a._edges.push(e);
+        }
+        if (e.b && e.b !== e.a) {
+            if (!e.b._edges) e.b._edges = [];
+            e.b._edges.push(e);
+        }
+    }
+
+    function _removeEdgeFromIndex(e) {
+        var i;
+        if (e.a && e.a._edges) {
+            i = e.a._edges.indexOf(e);
+            if (i >= 0) e.a._edges.splice(i, 1);
+        }
+        if (e.b && e.b._edges && e.b !== e.a) {
+            i = e.b._edges.indexOf(e);
+            if (i >= 0) e.b._edges.splice(i, 1);
+        }
+    }
+
+    function _rebuildEdgeIndex() {
+        for (var i = 0, len = nodes.length; i < len; i++) nodes[i]._edges = [];
+        for (var j = 0, eLen = edges.length; j < eLen; j++) {
+            _resolveEdge(edges[j]);
+            _addEdgeToIndex(edges[j]);
+        }
+    }
+
     function setGraph(nodeSpecs, edgeSpecs) {
         nodes.length = 0;
         nodeById.clear();
         edges.length = 0;
+        _pinned.length = 0;
         _expectedN = nodeSpecs.length;
         for (var s of nodeSpecs) {
             var n = ensureNode(s);
@@ -62,6 +107,7 @@ function createSimulation(opts) {
                 edges.push({ source: e.source, target: e.target });
             }
         }
+        _rebuildEdgeIndex();
     }
 
     function centroid() {
@@ -77,6 +123,7 @@ function createSimulation(opts) {
         var c = centroid();
         n.x = c.x + (Math.random() - 0.5) * 20;
         n.y = c.y + (Math.random() - 0.5) * 20;
+        n._edges = [];
         nodes.push(n);
         nodeById.set(n.id, n);
     }
@@ -87,20 +134,34 @@ function createSimulation(opts) {
         nodeById.delete(id);
         var i = nodes.indexOf(n);
         if (i >= 0) nodes.splice(i, 1);
+        if (n.fx !== null) {
+            var pi = _pinned.indexOf(n);
+            if (pi >= 0) _pinned.splice(pi, 1);
+        }
         for (var j = edges.length - 1; j >= 0; j--) {
-            if (edges[j].source === id || edges[j].target === id) edges.splice(j, 1);
+            var e = edges[j];
+            if (e.source === id || e.target === id) {
+                _removeEdgeFromIndex(e);
+                edges.splice(j, 1);
+            }
         }
     }
 
     function addEdge(source, target) {
         if (nodeById.has(source) && nodeById.has(target)) {
-            edges.push({ source: source, target: target });
+            var e = { source: source, target: target };
+            _resolveEdge(e);
+            _addEdgeToIndex(e);
+            edges.push(e);
         }
     }
 
     function removeEdge(source, target) {
         for (var j = edges.length - 1; j >= 0; j--) {
-            if (edges[j].source === source && edges[j].target === target) edges.splice(j, 1);
+            if (edges[j].source === source && edges[j].target === target) {
+                _removeEdgeFromIndex(edges[j]);
+                edges.splice(j, 1);
+            }
         }
     }
 
@@ -114,6 +175,7 @@ function createSimulation(opts) {
                 edges.push({ source: e.source, target: e.target });
             }
         }
+        _rebuildEdgeIndex();
     }
 
     function setPosition(id, x, y) {
@@ -125,13 +187,19 @@ function createSimulation(opts) {
     function pin(id, x, y) {
         var n = nodeById.get(id);
         if (!n) return;
+        var wasPinned = n.fx !== null;
         n.fx = x; n.fy = y; n.x = x; n.y = y; n.vx = 0; n.vy = 0;
+        if (!wasPinned) _pinned.push(n);
     }
 
     function unpin(id) {
         var n = nodeById.get(id);
         if (!n) return;
-        n.fx = null; n.fy = null;
+        if (n.fx !== null) {
+            n.fx = null; n.fy = null;
+            var i = _pinned.indexOf(n);
+            if (i >= 0) _pinned.splice(i, 1);
+        }
     }
 
     function freezeOutsideBounds(minXOrNull, minY, maxX, maxY, margin) {
@@ -271,23 +339,36 @@ function createSimulation(opts) {
         // Repulsion: only on active nodes; tree already excludes frozen ones.
         for (i = 0; i < aLen; i++) applyRepulsion(tree, active[i]);
 
-        // Spring: must walk all edges, but skip edges with both ends frozen
-        // and only apply forces to the active endpoints (matches the
-        // "frozen end still pulls unfrozen one" semantics from before).
-        for (var e of edges) {
-            var a = nodeById.get(e.source);
-            var b = nodeById.get(e.target);
-            if (!a || !b) continue;
-            if (a._frozen && b._frozen) continue;
-            var dx = b.x - a.x;
-            var dy = b.y - a.y;
-            var dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-            var diff = dist - cfg.springLength;
-            var force = cfg.springK * diff;
-            var fx = (dx / dist) * force;
-            var fy = (dy / dist) * force;
-            if (a.fx === null && !a._frozen) { a.vx += fx; a.vy += fy; }
-            if (b.fx === null && !b._frozen) { b.vx -= fx; b.vy -= fy; }
+        // Spring: iterate only edges incident to active nodes. With U=33 on a
+        // 25k-edge graph, that's ~165 edge processings instead of 25000 (and
+        // no Map.get inside the loop — refs are pre-resolved). _seenTick
+        // dedups edges between two active nodes (we'd see them twice
+        // otherwise). frozen-frozen edges are filtered implicitly: we never
+        // reach them since we iterate active only.
+        var sk = cfg.springK;
+        var sl = cfg.springLength;
+        var tickId = ++_tickCounter;
+        for (i = 0; i < aLen; i++) {
+            var nodeI = active[i];
+            var nEdges = nodeI._edges;
+            if (!nEdges) continue;
+            for (var j = 0, eLen = nEdges.length; j < eLen; j++) {
+                var e = nEdges[j];
+                if (e._seenTick === tickId) continue;
+                e._seenTick = tickId;
+                var a = e.a;
+                var b = e.b;
+                if (!a || !b) continue;
+                var dx = b.x - a.x;
+                var dy = b.y - a.y;
+                var dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+                var diff = dist - sl;
+                var force = sk * diff;
+                var fx = (dx / dist) * force;
+                var fy = (dy / dist) * force;
+                if (a.fx === null && !a._frozen) { a.vx += fx; a.vy += fy; }
+                if (b.fx === null && !b._frozen) { b.vx -= fx; b.vy -= fy; }
+            }
         }
 
         // Centering: only on active.
@@ -298,10 +379,11 @@ function createSimulation(opts) {
             na.vy -= na.y * c;
         }
 
-        // Pinned snap: still walks all nodes (pinned can be anywhere).
-        for (i = 0; i < len; i++) {
-            var np = nodes[i];
-            if (np.fx !== null) { np.x = np.fx; np.y = np.fy; }
+        // Pinned snap: walk only the small pinned set rather than all nodes.
+        var pLen = _pinned.length;
+        for (i = 0; i < pLen; i++) {
+            var np = _pinned[i];
+            np.x = np.fx; np.y = np.fy;
         }
 
         // Damping + clamp + integrate: only on active.
