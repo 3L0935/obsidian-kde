@@ -188,16 +188,31 @@ function createSimulation(opts) {
 
     function buildQuadtree() {
         if (nodes.length === 0) return null;
+        // When a freeze rectangle is active, exclude frozen nodes from the
+        // tree entirely. They don't move, so their field is constant — and the
+        // unfrozen nodes that need their repulsion are inside the viewport
+        // anyway, far from frozen ones. The 50% physics margin (set in
+        // GraphView's onTriggered) ensures nodes don't pop into the simulation
+        // when scrolling them in.
+        // Massive win at large N: a 5000-node vault zoomed onto 50 visible
+        // nodes builds a 50-node tree (50 inserts) instead of 5000.
         var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        var any = false;
         for (var n of nodes) {
+            if (isFrozen(n)) continue;
             if (n.x < minX) minX = n.x;
             if (n.y < minY) minY = n.y;
             if (n.x > maxX) maxX = n.x;
             if (n.y > maxY) maxY = n.y;
+            any = true;
         }
+        if (!any) return null;
         var size = Math.max(maxX - minX, maxY - minY) + 1;
         var q = newQnode(minX - 1, minY - 1, size + 2);
-        for (var n2 of nodes) insert(q, n2);
+        for (var n2 of nodes) {
+            if (isFrozen(n2)) continue;
+            insert(q, n2);
+        }
         return q;
     }
 
