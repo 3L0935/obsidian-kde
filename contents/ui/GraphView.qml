@@ -29,6 +29,8 @@ Item {
 
     property bool perfDebug: false
     property int lastRssKb: 0
+    property real perfLabelZoomThreshold: 1.0
+    property real perfEdgeZoomThreshold: 0.3
     property var _probe: PerfProbe.createProbe({ window: 120 })
 
     // View-bounds cache: written by Canvas.onPaint after computing world-space
@@ -237,12 +239,12 @@ Item {
             var nLen = nodes.length
 
             // LOD: at low zoom on dense graphs, edges are visually a mess —
-            // a tangle of overlapping thin strokes. Skipping them entirely
-            // both helps perf (no 25k Canvas lineTo calls) AND makes the dot
-            // pattern more readable. Threshold tuned for 5000-node fixture:
-            // below zoom 0.3 with > 500 edges, edges are dropped. Always
-            // drawn under selection so neighbors are visible.
-            var skipEdges = (!hasSelection && root.zoom < 0.3 && eLen > 500)
+            // a tangle of overlapping thin strokes. Skipping them helps perf
+            // AND clarifies the dot pattern. Threshold is user-configurable
+            // (default 0.3); the 500-edge floor prevents skipping on tiny
+            // graphs where it would feel jarring. Always drawn under
+            // selection so neighbors are visible.
+            var skipEdges = (!hasSelection && root.zoom < root.perfEdgeZoomThreshold && eLen > 500)
 
             ctx.lineWidth = 1 / root.zoom
             // Dimmed edges first
@@ -293,9 +295,9 @@ Item {
             ctx.globalAlpha = 1.0
 
             // LOD: labels are illegible at low zoom anyway and represent the
-            // bulk of paint cost (per-glyph fillText). Threshold 1.0 means
-            // labels appear only at native zoom or closer.
-            if (root.showLabels && root.zoom > 1.0) {
+            // bulk of paint cost (per-glyph fillText). Threshold is
+            // user-configurable (default 1.0 = native zoom or closer).
+            if (root.showLabels && root.zoom > root.perfLabelZoomThreshold) {
                 ctx.fillStyle = Kirigami.Theme.textColor
                 ctx.font = (root.labelFontSize / root.zoom) + "px sans-serif"
                 ctx.textAlign = "center"

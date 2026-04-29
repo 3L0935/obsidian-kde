@@ -54,6 +54,8 @@ Item {
             perfDebug: Plasmoid.configuration.perfDebug
             lastRssKb: view.stateOwner ? view.stateOwner.lastRssKb : 0
             autoPauseHidden: Plasmoid.configuration.perfAutoPauseHidden
+            perfLabelZoomThreshold: Plasmoid.configuration.perfLabelZoomThreshold
+            perfEdgeZoomThreshold: Plasmoid.configuration.perfEdgeZoomThreshold
             physicsConfig: ({
                 repulsion: Plasmoid.configuration.physicsRepulsion,
                 springLength: Plasmoid.configuration.physicsSpringLength,

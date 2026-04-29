@@ -37,6 +37,8 @@ ScrollView {
     property alias cfg_overlayCloseOnFocusLost: overlayCloseOnFocusCheck.checked
     property alias cfg_perfDebug: perfDebugCheck.checked
     property alias cfg_perfAutoPauseHidden: perfAutoPauseHiddenCheck.checked
+    property alias cfg_perfLabelZoomThreshold: perfLabelZoomSlider.value
+    property alias cfg_perfEdgeZoomThreshold: perfEdgeZoomSlider.value
 
 Kirigami.FormLayout {
     width: root.availableWidth
@@ -302,6 +304,32 @@ Kirigami.FormLayout {
         Kirigami.FormData.label: i18n("Auto-pause when hidden:")
         text: i18n("Stop physics when window/screen is not active")
         checked: true
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Hide labels below zoom:")
+        Slider {
+            id: perfLabelZoomSlider
+            from: 0.1; to: 5.0; stepSize: 0.1
+            Layout.fillWidth: true
+        }
+        Label {
+            text: perfLabelZoomSlider.value.toFixed(1) + "x"
+            Layout.minimumWidth: 48
+        }
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Hide edges below zoom:")
+        Slider {
+            id: perfEdgeZoomSlider
+            from: 0.05; to: 2.0; stepSize: 0.05
+            Layout.fillWidth: true
+        }
+        Label {
+            text: perfEdgeZoomSlider.value.toFixed(2) + "x"
+            Layout.minimumWidth: 48
+        }
     }
 
     Component.onCompleted: {
