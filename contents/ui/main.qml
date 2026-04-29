@@ -162,25 +162,37 @@ PlasmoidItem {
         return false
     }
 
-    function _loadGraphConfig(vaultPath) {
-        try {
-            var xhr = new XMLHttpRequest()
-            xhr.open("GET", "file://" + vaultPath + "/.obsidian/graph.json", false)
-            xhr.send(null)
-            if (xhr.status !== 200 && xhr.status !== 0) return []
-            var data = JSON.parse(xhr.responseText)
-            var raw = data.colorGroups || []
+    // Cache for color-group memoization. _cachedGraphHash is the djb2 hash of
+    // the parsed groups blob. _cachedGraphGroups is the last parsed groups
+    // array. Recomputation of nodeColors only happens when the hash changes,
+    // saving ~50k match ops per rescan on a 5000-note vault.
+    property string _cachedGraphHash: ""
+    property var _cachedGraphGroups: []
+
+    function _refreshGraphColors(vaultPath, doneCb) {
+        if (!vaultPath) { if (doneCb) doneCb(false); return }
+        fsHelper.readJsonFile(vaultPath + "/.obsidian/graph.json", function (data) {
             var groups = []
-            for (var i = 0; i < raw.length; i++) {
-                var g = raw[i]
-                if (!g || !g.color) continue
-                groups.push({ query: g.query || "", color: _rgbIntToHex(g.color.rgb) })
+            if (data && Array.isArray(data.colorGroups)) {
+                for (var i = 0; i < data.colorGroups.length; i++) {
+                    var g = data.colorGroups[i]
+                    if (!g || !g.color) continue
+                    groups.push({ query: g.query || "", color: _rgbIntToHex(g.color.rgb) })
+                }
             }
-            return groups
-        } catch (e) {
-            console.warn("[obsidian-kde] graph.json load failed:", e)
-            return []
-        }
+            // Hash via JSON.stringify of the groups array. Cheap and stable.
+            var serialized = JSON.stringify(groups)
+            var h = _hashStr(serialized)
+            if (h === root._cachedGraphHash) {
+                // No change — skip the O(N×G) recomputation.
+                if (doneCb) doneCb(false)
+                return
+            }
+            root._cachedGraphHash = h
+            root._cachedGraphGroups = groups
+            root.nodeColors = _computeNodeColors(groups)
+            if (doneCb) doneCb(true)
+        })
     }
 
     function _computeNodeColors(groups) {
@@ -301,6 +313,9 @@ PlasmoidItem {
         const vaultPath = Plasmoid.configuration.vaultPath
         // Reset any stale cached positions left from a previous vault.
         root._cachedPositions = ({})
+        // Reset color-group memoization so a vault switch forces recomputation.
+        root._cachedGraphHash = ""
+        root._cachedGraphGroups = []
 
         _resolveCacheDir(function () {
             var cachePath = _cachePath(vaultPath)
@@ -312,7 +327,7 @@ PlasmoidItem {
                         if (done % 1000 === 0) console.log("[obsidian-kde] scanned " + done + "/" + total)
                     },
                     function () {
-                        root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                        _refreshGraphColors(vaultPath, null)
                         _saveCache()
                     }
                 )
@@ -336,7 +351,7 @@ PlasmoidItem {
                                 if (hn.x !== 0 || hn.y !== 0) pos[hn.path] = { x: hn.x, y: hn.y }
                             }
                             root._cachedPositions = pos
-                            root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                            _refreshGraphColors(vaultPath, null)
                             _saveCache()
                         } else {
                             doFullScan(entries)
@@ -389,7 +404,7 @@ PlasmoidItem {
             try {
                 var diff = root.vault.rescanFiles(vaultPath, entries)
                 if (diff.added.length || diff.changed.length || diff.removed.length) {
-                    root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                    _refreshGraphColors(vaultPath, null)
                 }
                 // If the currently-displayed note was modified externally,
                 // nudge PageView so its binding re-reads from the cache.
