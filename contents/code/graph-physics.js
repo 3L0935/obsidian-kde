@@ -188,18 +188,17 @@ function createSimulation(opts) {
 
     function buildQuadtree() {
         if (nodes.length === 0) return null;
-        // When a freeze rectangle is active, exclude frozen nodes from the
-        // tree entirely. They don't move, so their field is constant — and the
-        // unfrozen nodes that need their repulsion are inside the viewport
-        // anyway, far from frozen ones. The 50% physics margin (set in
-        // GraphView's onTriggered) ensures nodes don't pop into the simulation
-        // when scrolling them in.
-        // Massive win at large N: a 5000-node vault zoomed onto 50 visible
-        // nodes builds a 50-node tree (50 inserts) instead of 5000.
+        // Frozen nodes (tagged in tick() before this is called) are excluded
+        // entirely. Massive win when zoomed in: a 5000-node vault with 50
+        // visible nodes builds a 50-node tree (50 inserts) instead of 5000.
+        // Reads n._frozen directly to avoid the 5000+ isFrozen() function
+        // calls that dominated tick cost in V4.
         var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         var any = false;
-        for (var n of nodes) {
-            if (isFrozen(n)) continue;
+        var i, len = nodes.length;
+        for (i = 0; i < len; i++) {
+            var n = nodes[i];
+            if (n._frozen) continue;
             if (n.x < minX) minX = n.x;
             if (n.y < minY) minY = n.y;
             if (n.x > maxX) maxX = n.x;
@@ -209,8 +208,9 @@ function createSimulation(opts) {
         if (!any) return null;
         var size = Math.max(maxX - minX, maxY - minY) + 1;
         var q = newQnode(minX - 1, minY - 1, size + 2);
-        for (var n2 of nodes) {
-            if (isFrozen(n2)) continue;
+        for (i = 0; i < len; i++) {
+            var n2 = nodes[i];
+            if (n2._frozen) continue;
             insert(q, n2);
         }
         return q;
@@ -235,19 +235,50 @@ function createSimulation(opts) {
 
     function tick() {
         if (nodes.length === 0) return;
-        var tree = buildQuadtree();
 
-        for (var n of nodes) {
-            if (n.fx !== null) continue;
-            if (isFrozen(n)) { n.vx = 0; n.vy = 0; continue; }
-            applyRepulsion(tree, n);
+        // Tag nodes once with their freeze state. Avoids ~75k isFrozen()
+        // function calls per tick (V4 JS engine is slow on calls — measured
+        // ~525ms wasted per tick on a 5000-node vault). Inline access to
+        // n._frozen costs ~10x less than a function call in V4.
+        // Build the active list at the same time so subsequent loops only
+        // iterate the relevant subset (typically a few dozen nodes when zoomed).
+        var fb = frozenBounds;
+        var active = [];
+        var i, len = nodes.length;
+        if (fb) {
+            for (i = 0; i < len; i++) {
+                var nn = nodes[i];
+                if (nn.x < fb.minX || nn.x > fb.maxX
+                    || nn.y < fb.minY || nn.y > fb.maxY) {
+                    nn._frozen = true;
+                    nn.vx = 0; nn.vy = 0;
+                } else {
+                    nn._frozen = false;
+                    if (nn.fx === null) active.push(nn);
+                }
+            }
+        } else {
+            for (i = 0; i < len; i++) {
+                var nn = nodes[i];
+                nn._frozen = false;
+                if (nn.fx === null) active.push(nn);
+            }
         }
 
+        var tree = buildQuadtree();
+        var aLen = active.length;
+
+        // Repulsion: only on active nodes; tree already excludes frozen ones.
+        for (i = 0; i < aLen; i++) applyRepulsion(tree, active[i]);
+
+        // Spring: must walk all edges, but skip edges with both ends frozen
+        // and only apply forces to the active endpoints (matches the
+        // "frozen end still pulls unfrozen one" semantics from before).
         for (var e of edges) {
             var a = nodeById.get(e.source);
             var b = nodeById.get(e.target);
             if (!a || !b) continue;
-            if (isFrozen(a) && isFrozen(b)) continue;  // skip cost; one-frozen edges still pull the unfrozen end
+            if (a._frozen && b._frozen) continue;
             var dx = b.x - a.x;
             var dy = b.y - a.y;
             var dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
@@ -255,28 +286,38 @@ function createSimulation(opts) {
             var force = cfg.springK * diff;
             var fx = (dx / dist) * force;
             var fy = (dy / dist) * force;
-            if (a.fx === null && !isFrozen(a)) { a.vx += fx; a.vy += fy; }
-            if (b.fx === null && !isFrozen(b)) { b.vx -= fx; b.vy -= fy; }
+            if (a.fx === null && !a._frozen) { a.vx += fx; a.vy += fy; }
+            if (b.fx === null && !b._frozen) { b.vx -= fx; b.vy -= fy; }
         }
 
-        for (var n2 of nodes) {
-            if (n2.fx !== null) continue;
-            if (isFrozen(n2)) continue;  // no centering for frozen
-            n2.vx -= n2.x * cfg.centering;
-            n2.vy -= n2.y * cfg.centering;
+        // Centering: only on active.
+        var c = cfg.centering;
+        for (i = 0; i < aLen; i++) {
+            var na = active[i];
+            na.vx -= na.x * c;
+            na.vy -= na.y * c;
         }
 
-        for (var n3 of nodes) {
-            if (n3.fx !== null) { n3.x = n3.fx; n3.y = n3.fy; continue; }
-            if (isFrozen(n3)) continue;
-            n3.vx *= cfg.damping;
-            n3.vy *= cfg.damping;
-            if (n3.vx > cfg.maxVelocity) n3.vx = cfg.maxVelocity;
-            if (n3.vx < -cfg.maxVelocity) n3.vx = -cfg.maxVelocity;
-            if (n3.vy > cfg.maxVelocity) n3.vy = cfg.maxVelocity;
-            if (n3.vy < -cfg.maxVelocity) n3.vy = -cfg.maxVelocity;
-            n3.x += n3.vx;
-            n3.y += n3.vy;
+        // Pinned snap: still walks all nodes (pinned can be anywhere).
+        for (i = 0; i < len; i++) {
+            var np = nodes[i];
+            if (np.fx !== null) { np.x = np.fx; np.y = np.fy; }
+        }
+
+        // Damping + clamp + integrate: only on active.
+        var d = cfg.damping;
+        var mv = cfg.maxVelocity;
+        var negMv = -mv;
+        for (i = 0; i < aLen; i++) {
+            var nb = active[i];
+            nb.vx *= d;
+            nb.vy *= d;
+            if (nb.vx > mv) nb.vx = mv;
+            else if (nb.vx < negMv) nb.vx = negMv;
+            if (nb.vy > mv) nb.vy = mv;
+            else if (nb.vy < negMv) nb.vy = negMv;
+            nb.x += nb.vx;
+            nb.y += nb.vy;
         }
     }
 
