@@ -59,8 +59,7 @@ function createVaultModel(opts) {
             absPath: absPath,
             basename: basename,
             title: title,
-            content: content,
-            body: body,
+            // content / body intentionally dropped — see loadNoteContent()
             frontmatter: frontmatter,
             aliases: aliases,
             tags: tags,
@@ -230,6 +229,19 @@ function createVaultModel(opts) {
         emit("noteRemoved", rel);
     }
 
+    function loadNoteContent(relPath) {
+        var note = notes.get(relPath);
+        if (!note) return null;
+        try {
+            return fs.readFileSync(note.absPath);
+        } catch (e) {
+            if (typeof console !== "undefined") {
+                console.warn("[vault] loadNoteContent failed:", note.absPath, e && e.message);
+            }
+            return null;
+        }
+    }
+
     // Dual-mode: pass a callback to use an async fs.writeFile (required under
     // QML — sync XHR PUT is broken on file:// in Qt 6.11). Without a callback
     // we fall back to fs.writeFileSync, which is what the Node tests inject.
@@ -281,6 +293,7 @@ function createVaultModel(opts) {
         rescanFiles: rescanFiles,
         removeNote: removeNote,
         saveNote: saveNote,
+        loadNoteContent: loadNoteContent,
     };
 }
 
