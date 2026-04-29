@@ -135,6 +135,23 @@ Item {
             ctx.translate(width / 2 + root.panX, height / 2 + root.panY)
             ctx.scale(root.zoom, root.zoom)
 
+            // World-space rectangle currently visible, with margin.
+            // We translate by (width/2 + panX) and scale by zoom, so the world-space
+            // origin sits at screen pixel (width/2 + panX, height/2 + panY). Inverting
+            // gives us the world bounds of the screen rectangle.
+            var marginPct = 0.20  // 20% past the viewport edges to avoid pop-in on pan
+            var halfW = (width / root.zoom) * (0.5 + marginPct)
+            var halfH = (height / root.zoom) * (0.5 + marginPct)
+            var viewMinX = -halfW - root.panX / root.zoom
+            var viewMaxX =  halfW - root.panX / root.zoom
+            var viewMinY = -halfH - root.panY / root.zoom
+            var viewMaxY =  halfH - root.panY / root.zoom
+
+            function inView(n) {
+                return n.x >= viewMinX && n.x <= viewMaxX
+                    && n.y >= viewMinY && n.y <= viewMaxY
+            }
+
             const edges = root.sim.getEdges()
             const nodes = root.sim.getNodes()
             const byId = {}
@@ -163,6 +180,7 @@ Item {
                     if (focused[e.source] && focused[e.target]) continue
                     const a = byId[e.source], b = byId[e.target]
                     if (!a || !b) continue
+                    if (!inView(a) && !inView(b)) continue
                     ctx.moveTo(a.x, a.y)
                     ctx.lineTo(b.x, b.y)
                 }
@@ -175,6 +193,7 @@ Item {
                 if (hasSelection && !(focused[e.source] && focused[e.target])) continue
                 const a = byId[e.source], b = byId[e.target]
                 if (!a || !b) continue
+                if (!inView(a) && !inView(b)) continue
                 ctx.moveTo(a.x, a.y)
                 ctx.lineTo(b.x, b.y)
             }
@@ -183,6 +202,7 @@ Item {
             const defaultColor = Kirigami.Theme.highlightColor
             const colors = root.nodeColors || {}
             for (const n of nodes) {
+                if (!inView(n)) continue
                 ctx.globalAlpha = (hasSelection && !focused[n.id]) ? dimAlpha : 1.0
                 ctx.fillStyle = colors[n.id] || defaultColor
                 ctx.beginPath()
@@ -196,6 +216,7 @@ Item {
                 ctx.font = (root.labelFontSize / root.zoom) + "px sans-serif"
                 ctx.textAlign = "center"
                 for (const n of nodes) {
+                    if (!inView(n)) continue
                     if (hasSelection && !focused[n.id]) continue
                     const note = root.vaultModel.getNote(n.id)
                     if (note) ctx.fillText(note.title, n.x, n.y - 10)
