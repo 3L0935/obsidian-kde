@@ -321,9 +321,13 @@ Item {
         var n = root.sim ? root.sim.getNodes().length : 0
         var u = root.sim ? root.sim.unfrozenCount() : 0
         var rssMb = root.lastRssKb > 0 ? (root.lastRssKb / 1024).toFixed(0) + "MB" : "?"
+        // tickNow / paintNow = most-recent sample, useful when the rolling
+        // window still holds older ticks from a different viewport state.
+        var tickNow = root._probe.last("tick")
+        var paintNow = root._probe.last("paint")
         return "FPS " + fps.toFixed(0) +
-               "  tick " + tick.p50 + "/" + tick.p95 + "ms" +
-               "  paint " + paint.p50 + "/" + paint.p95 + "ms" +
+               "  tick " + tickNow + " (p50 " + tick.p50 + " p95 " + tick.p95 + ")ms" +
+               "  paint " + paintNow + " (p50 " + paint.p50 + ")ms" +
                "  N=" + n + "(U=" + u + ")" +
                "  RSS=" + rssMb
     }

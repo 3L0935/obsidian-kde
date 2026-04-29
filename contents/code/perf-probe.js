@@ -36,7 +36,13 @@ function createProbe(opts) {
 
     function reset() { channels = {}; }
 
-    return { record: record, stats: stats, reset: reset };
+    function last(name) {
+        var arr = channels[name];
+        if (!arr || arr.length === 0) return 0;
+        return arr[arr.length - 1];
+    }
+
+    return { record: record, stats: stats, reset: reset, last: last };
 }
 
 if (typeof module !== "undefined" && module.exports) {
