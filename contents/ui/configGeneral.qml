@@ -33,6 +33,7 @@ Kirigami.FormLayout {
     property alias cfg_overlayDimAlpha: overlayDimSlider.value
     property alias cfg_overlayCloseOnFocusLost: overlayCloseOnFocusCheck.checked
     property alias cfg_perfDebug: perfDebugCheck.checked
+    property alias cfg_perfAutoPauseHidden: perfAutoPauseHiddenCheck.checked
 
     RowLayout {
         Kirigami.FormData.label: i18n("Vault path:")
@@ -288,6 +289,13 @@ Kirigami.FormLayout {
         Kirigami.FormData.label: i18n("Debug overlay (FPS):")
         text: i18n("Show FPS / tick / paint stats over the graph")
         checked: false
+    }
+
+    CheckBox {
+        id: perfAutoPauseHiddenCheck
+        Kirigami.FormData.label: i18n("Auto-pause when hidden:")
+        text: i18n("Stop physics when window/screen is not active")
+        checked: true
     }
 
     Component.onCompleted: {

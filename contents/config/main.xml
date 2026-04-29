@@ -59,5 +59,6 @@
             <default>true</default>
         </entry>
         <entry name="perfDebug" type="Bool"><default>false</default></entry>
+        <entry name="perfAutoPauseHidden" type="Bool"><default>true</default></entry>
     </group>
 </kcfg>

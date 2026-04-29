@@ -53,6 +53,7 @@ Item {
             labelFontSize: Plasmoid.configuration.graphLabelFontSize
             perfDebug: Plasmoid.configuration.perfDebug
             lastRssKb: view.stateOwner ? view.stateOwner.lastRssKb : 0
+            autoPauseHidden: Plasmoid.configuration.perfAutoPauseHidden
             physicsConfig: ({
                 repulsion: Plasmoid.configuration.physicsRepulsion,
                 springLength: Plasmoid.configuration.physicsSpringLength,

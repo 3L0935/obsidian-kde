@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import org.kde.kirigami as Kirigami
 import "../code/graph-physics.js" as Physics
 import "../code/perf-probe.js" as PerfProbe
@@ -29,6 +30,24 @@ Item {
     property bool perfDebug: false
     property int lastRssKb: 0
     property var _probe: PerfProbe.createProbe({ window: 120 })
+
+    property bool autoPauseHidden: true
+
+    // Physics runs only when:
+    //   - sim is initialized,
+    //   - the widget's window is visible (or autoPauseHidden is off), AND
+    //   - the application is in a foregroundable state.
+    // Qt.ApplicationActive = focused, Qt.ApplicationInactive = not focused but visible.
+    // Qt.ApplicationSuspended/Hidden = no point ticking.
+    property bool _shouldRun: {
+        if (!sim) return false
+        if (!autoPauseHidden) return true
+        if (Qt.application.state !== Qt.ApplicationActive
+            && Qt.application.state !== Qt.ApplicationInactive) return false
+        var win = root.Window.window
+        if (win && win.visibility === Window.Hidden) return false
+        return true
+    }
 
     property string selectedNodeId: ""
 
@@ -98,7 +117,7 @@ Item {
     Timer {
         id: physicsTimer
         interval: 16
-        running: root.sim !== null
+        running: root._shouldRun
         repeat: true
         onTriggered: {
             var t0 = Date.now()
