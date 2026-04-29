@@ -5,8 +5,11 @@ import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 import org.kde.kquickcontrols as KQC
 
-Kirigami.FormLayout {
+// Wrap the FormLayout in a ScrollView so the config dialog stays usable when
+// the window is shorter than the form. Plasma KCM doesn't wrap automatically.
+ScrollView {
     id: root
+    contentWidth: availableWidth
 
     property alias cfg_vaultPath: vaultPathField.text
     // Plain (non-binding) property: plasmashell assigns cfg_mode on load, which
@@ -32,6 +35,13 @@ Kirigami.FormLayout {
     property string cfg_overlayShortcut: "Meta+O"
     property alias cfg_overlayDimAlpha: overlayDimSlider.value
     property alias cfg_overlayCloseOnFocusLost: overlayCloseOnFocusCheck.checked
+    property alias cfg_perfDebug: perfDebugCheck.checked
+    property alias cfg_perfAutoPauseHidden: perfAutoPauseHiddenCheck.checked
+    property alias cfg_perfLabelZoomThreshold: perfLabelZoomSlider.value
+    property alias cfg_perfEdgeZoomThreshold: perfEdgeZoomSlider.value
+
+Kirigami.FormLayout {
+    width: root.availableWidth
 
     RowLayout {
         Kirigami.FormData.label: i18n("Vault path:")
@@ -277,10 +287,56 @@ Kirigami.FormLayout {
         checked: true
     }
 
+    Kirigami.Separator {
+        Kirigami.FormData.isSection: true
+        Kirigami.FormData.label: i18n("Performance")
+    }
+
+    CheckBox {
+        id: perfDebugCheck
+        Kirigami.FormData.label: i18n("Debug overlay (FPS):")
+        text: i18n("Show FPS / tick / paint stats over the graph")
+        checked: false
+    }
+
+    CheckBox {
+        id: perfAutoPauseHiddenCheck
+        Kirigami.FormData.label: i18n("Auto-pause when hidden:")
+        text: i18n("Stop physics when window/screen is not active")
+        checked: true
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Hide labels below zoom:")
+        Slider {
+            id: perfLabelZoomSlider
+            from: 0.1; to: 5.0; stepSize: 0.1
+            Layout.fillWidth: true
+        }
+        Label {
+            text: perfLabelZoomSlider.value.toFixed(1) + "x"
+            Layout.minimumWidth: 48
+        }
+    }
+
+    RowLayout {
+        Kirigami.FormData.label: i18n("Hide edges below zoom:")
+        Slider {
+            id: perfEdgeZoomSlider
+            from: 0.05; to: 2.0; stepSize: 0.05
+            Layout.fillWidth: true
+        }
+        Label {
+            text: perfEdgeZoomSlider.value.toFixed(2) + "x"
+            Layout.minimumWidth: 48
+        }
+    }
+
     Component.onCompleted: {
         // Sync radios to the plain cfg_mode value plasmashell just wrote.
         if (cfg_mode === "pinned") pinnedRadio.checked = true
         else dynamicRadio.checked = true
         overlayShortcutField.keySequence = cfg_overlayShortcut
     }
-}
+}  // FormLayout
+}  // ScrollView

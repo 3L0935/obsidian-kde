@@ -1,7 +1,9 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import org.kde.kirigami as Kirigami
 import "../code/graph-physics.js" as Physics
+import "../code/perf-probe.js" as PerfProbe
 
 Item {
     id: root
@@ -14,6 +16,10 @@ Item {
     property var physicsConfig: null
     signal nodeActivated(string path)
     signal requestRescan()
+    // Emitted after _resetFromVault has built a fresh simulation. main.qml
+    // wires this up so it can apply cached node positions and stash a
+    // reference for the periodic cache-save loop.
+    signal simReady(var simInstance)
 
     // Press-session debouncing: one rescan per press, re-armed on release.
     // A long drag or held button therefore produces a single request, and
@@ -24,6 +30,37 @@ Item {
     property real panX: 0
     property real panY: 0
     property real zoom: 1.0
+
+    property bool perfDebug: false
+    property int lastRssKb: 0
+    property real perfLabelZoomThreshold: 1.0
+    property real perfEdgeZoomThreshold: 0.3
+    property var _probe: PerfProbe.createProbe({ window: 120 })
+
+    // View-bounds cache: written by Canvas.onPaint after computing world-space
+    // viewport, read by physicsTimer.onTriggered to freeze off-screen nodes.
+    property real _viewMinX: -Infinity
+    property real _viewMaxX:  Infinity
+    property real _viewMinY: -Infinity
+    property real _viewMaxY:  Infinity
+
+    property bool autoPauseHidden: true
+
+    // Physics runs only when:
+    //   - sim is initialized,
+    //   - the widget's window is visible (or autoPauseHidden is off), AND
+    //   - the application is in a foregroundable state.
+    // Qt.ApplicationActive = focused, Qt.ApplicationInactive = not focused but visible.
+    // Qt.ApplicationSuspended/Hidden = no point ticking.
+    property bool _shouldRun: {
+        if (!sim) return false
+        if (!autoPauseHidden) return true
+        if (Qt.application.state !== Qt.ApplicationActive
+            && Qt.application.state !== Qt.ApplicationInactive) return false
+        var win = root.Window.window
+        if (win && win.visibility === Window.Hidden) return false
+        return true
+    }
 
     property string selectedNodeId: ""
 
@@ -77,6 +114,9 @@ Item {
         const nodeSpecs = notes.map(function (n) { return { id: n.path } })
         const edges = vaultModel.getEdges()
         sim.setGraph(nodeSpecs, edges)
+        // Hand the freshly-built sim up so main.qml can apply cached
+        // positions and the cache writer can read live ones.
+        root.simReady(sim)
         _wakePhysics()
         canvas.requestPaint()
     }
@@ -93,15 +133,38 @@ Item {
     Timer {
         id: physicsTimer
         interval: 16
-        running: root.sim !== null
+        running: root._shouldRun
         repeat: true
         onTriggered: {
+            if (root._viewMinX > -Infinity) {
+                // 50% extra physics margin so nodes drifting in from off-screen
+                // don't pop visually — they get a few ticks of warm-up before
+                // becoming visible.
+                var pm = (root._viewMaxX - root._viewMinX) * 0.5
+                root.sim.freezeOutsideBounds(
+                    root._viewMinX - pm, root._viewMinY - pm,
+                    root._viewMaxX + pm, root._viewMaxY + pm,
+                )
+            }
+            var t0 = Date.now()
             root.sim.tick()
-            // Throttle only: at rest we tick at 5 FPS. Never fully stop —
+            var tickMs = Date.now() - t0
+            root._probe.record("tick", tickMs)
+            // Throttle: at rest we tick at 5 FPS. Never fully stop —
             // resuming from a hard stop causes visible snaps because velocity
             // residuals balance the graph and re-applying forces after a gap
             // produces sudden jumps.
-            interval = root.sim.kineticEnergy() < 0.5 ? 200 : 16
+            // LOD throttle: when a single tick is already heavy (zoomed-out
+            // view of a dense graph), there's no point trying to run at 60Hz.
+            // Cap the tick rate so the UI stays responsive — physics will
+            // run at whatever pace the workload allows.
+            if (root.sim.kineticEnergy() < 0.5) {
+                interval = 200
+            } else if (tickMs > 50) {
+                interval = Math.max(33, tickMs)  // adapt: aim for never more than 1 tick worth of "behind"
+            } else {
+                interval = 16
+            }
             canvas.requestPaint()
         }
     }
@@ -117,6 +180,7 @@ Item {
         anchors.fill: parent
 
         onPaint: {
+            var paintT0 = Date.now()
             const ctx = getContext("2d")
             ctx.reset()
             ctx.clearRect(0, 0, width, height)
@@ -127,87 +191,195 @@ Item {
             ctx.translate(width / 2 + root.panX, height / 2 + root.panY)
             ctx.scale(root.zoom, root.zoom)
 
+            // World-space rectangle currently visible, with margin.
+            // We translate by (width/2 + panX) and scale by zoom, so the world-space
+            // origin sits at screen pixel (width/2 + panX, height/2 + panY). Inverting
+            // gives us the world bounds of the screen rectangle.
+            var marginPct = 0.20  // 20% past the viewport edges to avoid pop-in on pan
+            var halfW = (width / root.zoom) * (0.5 + marginPct)
+            var halfH = (height / root.zoom) * (0.5 + marginPct)
+            var viewMinX = -halfW - root.panX / root.zoom
+            var viewMaxX =  halfW - root.panX / root.zoom
+            var viewMinY = -halfH - root.panY / root.zoom
+            var viewMaxY =  halfH - root.panY / root.zoom
+
+            root._viewMinX = viewMinX
+            root._viewMaxX = viewMaxX
+            root._viewMinY = viewMinY
+            root._viewMaxY = viewMaxY
+
             const edges = root.sim.getEdges()
             const nodes = root.sim.getNodes()
-            const byId = {}
-            for (const n of nodes) byId[n.id] = n
+
+            // Tag visibility once per paint (5000 inline checks) so all four
+            // draw passes can read n._inView in O(1) instead of calling a
+            // closure-scoped inView() function ~70k times per paint.
+            for (var ti = 0, tlen = nodes.length; ti < tlen; ti++) {
+                var tn = nodes[ti]
+                tn._inView = (tn.x >= viewMinX && tn.x <= viewMaxX
+                              && tn.y >= viewMinY && tn.y <= viewMaxY)
+            }
+
+            // edges now carry direct refs e.a / e.b populated by the physics
+            // module (no per-paint byId map needed). selectedNodeRef lookup
+            // still needs nodeById since we have an id, not a ref.
+            var selectedNodeRef = null
+            if (root.selectedNodeId) {
+                selectedNodeRef = root.sim.getNode(root.selectedNodeId) || null
+            }
 
             // When a node is selected, build the set of "focused" ids
             // (the node itself + its direct neighbors). Everything else is
             // dimmed and its label hidden, mirroring Obsidian's hover focus.
-            const hasSelection = root.selectedNodeId !== "" && byId[root.selectedNodeId]
+            const hasSelection = selectedNodeRef !== null
             const focused = {}
             if (hasSelection) {
                 focused[root.selectedNodeId] = true
-                for (const e of edges) {
-                    if (e.source === root.selectedNodeId) focused[e.target] = true
-                    else if (e.target === root.selectedNodeId) focused[e.source] = true
+                for (var fi = 0, flen = edges.length; fi < flen; fi++) {
+                    var fe = edges[fi]
+                    if (fe.source === root.selectedNodeId) focused[fe.target] = true
+                    else if (fe.target === root.selectedNodeId) focused[fe.source] = true
                 }
             }
             const dimAlpha = 0.3
+            var eLen = edges.length
+            var nLen = nodes.length
+
+            // LOD: at low zoom on dense graphs, edges are visually a mess —
+            // a tangle of overlapping thin strokes. Skipping them helps perf
+            // AND clarifies the dot pattern. Threshold is user-configurable
+            // (default 0.3); the 500-edge floor prevents skipping on tiny
+            // graphs where it would feel jarring. Always drawn under
+            // selection so neighbors are visible.
+            var skipEdges = (!hasSelection && root.zoom < root.perfEdgeZoomThreshold && eLen > 500)
 
             ctx.lineWidth = 1 / root.zoom
             // Dimmed edges first
             if (hasSelection) {
                 ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4 * dimAlpha)
                 ctx.beginPath()
-                for (const e of edges) {
-                    if (focused[e.source] && focused[e.target]) continue
-                    const a = byId[e.source], b = byId[e.target]
-                    if (!a || !b) continue
-                    ctx.moveTo(a.x, a.y)
-                    ctx.lineTo(b.x, b.y)
+                for (var di = 0; di < eLen; di++) {
+                    var de = edges[di]
+                    if (focused[de.source] && focused[de.target]) continue
+                    var da = de.a, db = de.b
+                    if (!da || !db) continue
+                    if (!da._inView && !db._inView) continue
+                    ctx.moveTo(da.x, da.y)
+                    ctx.lineTo(db.x, db.y)
                 }
                 ctx.stroke()
             }
             // Normal edges
-            ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4)
-            ctx.beginPath()
-            for (const e of edges) {
-                if (hasSelection && !(focused[e.source] && focused[e.target])) continue
-                const a = byId[e.source], b = byId[e.target]
-                if (!a || !b) continue
-                ctx.moveTo(a.x, a.y)
-                ctx.lineTo(b.x, b.y)
+            if (!skipEdges) {
+                ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4)
+                ctx.beginPath()
+                for (var ei = 0; ei < eLen; ei++) {
+                    var e = edges[ei]
+                    if (hasSelection && !(focused[e.source] && focused[e.target])) continue
+                    var ea = e.a, eb = e.b
+                    if (!ea || !eb) continue
+                    if (!ea._inView && !eb._inView) continue
+                    ctx.moveTo(ea.x, ea.y)
+                    ctx.lineTo(eb.x, eb.y)
+                }
+                ctx.stroke()
             }
-            ctx.stroke()
 
             const defaultColor = Kirigami.Theme.highlightColor
             const colors = root.nodeColors || {}
-            for (const n of nodes) {
-                ctx.globalAlpha = (hasSelection && !focused[n.id]) ? dimAlpha : 1.0
-                ctx.fillStyle = colors[n.id] || defaultColor
+            // LOD: at low zoom on dense graphs, draw nodes a touch smaller so
+            // they don't merge into a flat blob. Otherwise default 5px works.
+            var nodeRadius = 5
+            for (var ni = 0; ni < nLen; ni++) {
+                var nn = nodes[ni]
+                if (!nn._inView) continue
+                ctx.globalAlpha = (hasSelection && !focused[nn.id]) ? dimAlpha : 1.0
+                ctx.fillStyle = colors[nn.id] || defaultColor
                 ctx.beginPath()
-                ctx.arc(n.x, n.y, 5, 0, Math.PI * 2)
+                ctx.arc(nn.x, nn.y, nodeRadius, 0, Math.PI * 2)
                 ctx.fill()
             }
             ctx.globalAlpha = 1.0
 
-            if (root.showLabels && root.zoom > 0.6) {
+            // LOD: labels are illegible at low zoom anyway and represent the
+            // bulk of paint cost (per-glyph fillText). Threshold is
+            // user-configurable (default 1.0 = native zoom or closer).
+            if (root.showLabels && root.zoom > root.perfLabelZoomThreshold) {
                 ctx.fillStyle = Kirigami.Theme.textColor
                 ctx.font = (root.labelFontSize / root.zoom) + "px sans-serif"
                 ctx.textAlign = "center"
-                for (const n of nodes) {
-                    if (hasSelection && !focused[n.id]) continue
-                    const note = root.vaultModel.getNote(n.id)
-                    if (note) ctx.fillText(note.title, n.x, n.y - 10)
+                for (var li = 0; li < nLen; li++) {
+                    var ln = nodes[li]
+                    if (!ln._inView) continue
+                    if (hasSelection && !focused[ln.id]) continue
+                    var note = root.vaultModel.getNote(ln.id)
+                    if (note) ctx.fillText(note.title, ln.x, ln.y - 10)
                 }
             }
 
             // Selected-node highlight ring (drawn last so it sits on top).
-            if (root.selectedNodeId) {
-                const sel = byId[root.selectedNodeId]
-                if (sel) {
-                    ctx.strokeStyle = Kirigami.Theme.highlightColor
-                    ctx.lineWidth = 2 / root.zoom
-                    ctx.beginPath()
-                    ctx.arc(sel.x, sel.y, 9, 0, Math.PI * 2)
-                    ctx.stroke()
-                }
+            if (selectedNodeRef) {
+                ctx.strokeStyle = Kirigami.Theme.highlightColor
+                ctx.lineWidth = 2 / root.zoom
+                ctx.beginPath()
+                ctx.arc(selectedNodeRef.x, selectedNodeRef.y, 9, 0, Math.PI * 2)
+                ctx.stroke()
             }
 
             ctx.restore()
+            root._probe.record("paint", Date.now() - paintT0)
+            root._probe.record("frame", Date.now())
         }
+    }
+
+    Rectangle {
+        visible: root.perfDebug
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.margins: 4
+        color: Qt.rgba(0, 0, 0, 0.6)
+        radius: 3
+        width: hudText.implicitWidth + 8
+        height: hudText.implicitHeight + 4
+        z: 100  // sit above the canvas but below modal selection ring (none)
+
+        Timer {
+            interval: 500
+            running: root.perfDebug
+            repeat: true
+            onTriggered: hudText.text = root._fmtStats()
+        }
+
+        Text {
+            id: hudText
+            anchors.centerIn: parent
+            font.family: "monospace"
+            font.pixelSize: 10
+            color: "#0f0"
+        }
+    }
+
+    function _fmtStats() {
+        var tick = root._probe.stats("tick")
+        var paint = root._probe.stats("paint")
+        var frame = root._probe.stats("frame")
+        var fps = 0
+        if (frame.count > 1) {
+            var span = frame.max - frame.min
+            fps = span > 0 ? ((frame.count - 1) * 1000 / span) : 0
+        }
+        var n = root.sim ? root.sim.getNodes().length : 0
+        var u = root.sim ? root.sim.unfrozenCount() : 0
+        var rssMb = root.lastRssKb > 0 ? (root.lastRssKb / 1024).toFixed(0) + "MB" : "?"
+        // tickNow / paintNow = most-recent sample, useful when the rolling
+        // window still holds older ticks from a different viewport state.
+        var tickNow = root._probe.last("tick")
+        var paintNow = root._probe.last("paint")
+        return "FPS " + fps.toFixed(0) +
+               "  tick " + tickNow + " (p50 " + tick.p50 + " p95 " + tick.p95 + ")ms" +
+               "  paint " + paintNow + " (p50 " + paint.p50 + ")ms" +
+               "  N=" + n + "(U=" + u + ")" +
+               "  RSS=" + rssMb
     }
 
     MouseArea {
@@ -237,11 +409,7 @@ Item {
             // it stays at least ~14 screen pixels wide at any zoom level and
             // never shrinks below the visible glyph.
             const r = Math.max(14 / root.zoom, 6)
-            for (const n of root.sim.getNodes()) {
-                const dx = n.x - w.x, dy = n.y - w.y
-                if (dx * dx + dy * dy <= r * r) return n
-            }
-            return null
+            return root.sim.hitTest(w.x, w.y, r)
         }
 
         onPressed: (e) => {
@@ -315,8 +483,8 @@ Item {
             }
             const factor = ev.angleDelta.y > 0 ? 1.1 : (1 / 1.1)
             root.zoom *= factor
-            if (root.zoom < 0.1) root.zoom = 0.1
-            if (root.zoom > 5.0) root.zoom = 5.0
+            if (root.zoom < 0.05) root.zoom = 0.05
+            if (root.zoom > 20.0) root.zoom = 20.0
             root.panX = mx - root.width / 2 - worldBefore.x * root.zoom
             root.panY = my - root.height / 2 - worldBefore.y * root.zoom
             canvas.requestPaint()

@@ -95,3 +95,71 @@ describe("graph-physics", () => {
     assertEqual(sim.getEdges().length, 1);
   });
 });
+
+describe("freezeOutsideBounds", () => {
+    it("nodes outside bounds keep their position and velocity unchanged across a tick", () => {
+        const sim = createSimulation();
+        sim.setGraph(
+            [{ id: "a" }, { id: "b" }, { id: "c" }],
+            [{ source: "a", target: "b" }],
+        );
+        // Place "c" far out so any force we apply would move it.
+        sim.setPosition("c", 10000, 10000);
+        sim.freezeOutsideBounds(-100, -100, 100, 100, 0);
+        const before = { x: sim.getNode("c").x, y: sim.getNode("c").y };
+        sim.tick();
+        const after = sim.getNode("c");
+        assertEqual(after.x, before.x, "frozen node x unchanged");
+        assertEqual(after.y, before.y, "frozen node y unchanged");
+        assertEqual(after.vx, 0);
+        assertEqual(after.vy, 0);
+    });
+
+    it("clearing freeze restores normal motion", () => {
+        const sim = createSimulation();
+        sim.setGraph([{ id: "a" }], []);
+        sim.setPosition("a", 1000, 0);
+        sim.freezeOutsideBounds(-100, -100, 100, 100, 0);
+        sim.tick();
+        const xFrozen = sim.getNode("a").x;
+        sim.freezeOutsideBounds(null);  // clear
+        sim.tick();
+        // With centering pull, x should now drift toward 0.
+        assertTrue(sim.getNode("a").x < xFrozen, "node moves once unfrozen");
+    });
+});
+
+describe("hitTest", () => {
+    it("finds the nearest node within radius", () => {
+        const sim = createSimulation();
+        sim.setGraph(
+            [{ id: "a" }, { id: "b" }, { id: "c" }],
+            [],
+        );
+        sim.setPosition("a", 0, 0);
+        sim.setPosition("b", 50, 0);
+        sim.setPosition("c", 200, 0);
+        // Query at (48, 0): "b" is 2 units away, "a" is 48 units, "c" is 152 units.
+        // Radius 5 covers only "b".
+        const hit = sim.hitTest(48, 0, 5);
+        assertEqual(hit.id, "b");
+    });
+
+    it("returns the nearest when multiple are within radius", () => {
+        const sim = createSimulation();
+        sim.setGraph([{ id: "a" }, { id: "b" }], []);
+        sim.setPosition("a", 0, 0);
+        sim.setPosition("b", 5, 0);
+        // Query at (3, 0): "a" is 3 away, "b" is 2 away. Radius 10 covers both.
+        // Must return "b" (nearer).
+        const hit = sim.hitTest(3, 0, 10);
+        assertEqual(hit.id, "b");
+    });
+
+    it("returns null when nothing within radius", () => {
+        const sim = createSimulation();
+        sim.setGraph([{ id: "a" }], []);
+        sim.setPosition("a", 0, 0);
+        assertEqual(sim.hitTest(1000, 1000, 10), null);
+    });
+});

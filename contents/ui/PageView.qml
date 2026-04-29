@@ -43,10 +43,12 @@ Item {
     property string mode: "rendered"
     property string saveState: "saved"
     property real loadedMtime: 0
+    property string _renderedContent: ""
+    property bool _contentLoading: false
 
     function _renderedHtml() {
-        if (!note) return ""
-        const parsed = MD.parseFrontmatter(note.content)
+        if (!root._renderedContent) return ""
+        const parsed = MD.parseFrontmatter(root._renderedContent)
         let html = MD.renderHtml(parsed.body)
         html = html.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,
             function (_, t, l) { return "<a href=\"obsidian-wiki://" + encodeURIComponent(t) + "\">" + l + "</a>" })
@@ -57,9 +59,24 @@ Item {
         return html
     }
 
+    function _refreshContent() {
+        if (!vaultModel || !notePath) { root._renderedContent = ""; return }
+        root._contentLoading = true
+        // loadNoteContent is a sync XHR read — Qt.callLater just defers it to the
+        // next event-loop tick so any prior binding update lands first; the read
+        // itself still blocks the UI thread for the file's duration. For a single
+        // open note this is acceptable (single small file). The graph view never
+        // calls this function.
+        Qt.callLater(function () {
+            root._renderedContent = vaultModel.loadNoteContent(notePath) || ""
+            root._contentLoading = false
+        })
+    }
+
     function _loadIntoEditor() {
         if (!note) return
-        editor.text = note.content
+        var c = vaultModel.loadNoteContent(notePath)
+        editor.text = c || ""
         root.loadedMtime = note.mtime
         root.saveState = "saved"
     }
@@ -98,9 +115,18 @@ Item {
     }
 
     onNotePathChanged: {
-        if (notePath) root.requestVaultRescan()
-        if (root.mode === "editing") _loadIntoEditor()
+        if (notePath) {
+            root.requestVaultRescan()
+            _refreshContent()
+            if (root.mode === "editing") _loadIntoEditor()
+        } else {
+            root._renderedContent = ""
+        }
     }
+
+    on_ReloadTickChanged: _refreshContent()
+    onReloadTickChanged: _refreshContent()
+    Component.onCompleted: _refreshContent()
 
     onVisibleChanged: { if (visible && notePath) root.requestVaultRescan() }
 

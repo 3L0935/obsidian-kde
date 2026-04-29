@@ -86,6 +86,31 @@ describe("VaultModel.scan", () => {
     const n = vm.getNote("code-only.md");
     assertDeepEqual(n.outgoingLinks, []);
   });
+
+  it("does not store note content in the live index", () => {
+    const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
+    vm.scan(FIXTURE);
+    const foo = vm.getNote("foo.md");
+    assertTrue(foo.content === undefined, "content must not be cached");
+    assertTrue(foo.body === undefined, "body must not be cached");
+    // Metadata still extracted at scan time
+    assertTrue(Array.isArray(foo.wikilinksRaw));
+    assertTrue(Array.isArray(foo.tags));
+    assertTrue(typeof foo.title === "string");
+  });
+
+  it("loadNoteContent reads on demand and returns the file text", () => {
+    const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
+    vm.scan(FIXTURE);
+    const content = vm.loadNoteContent("foo.md");
+    assertTrue(content.includes("Foo"), "loaded on demand");
+  });
+
+  it("loadNoteContent returns null for unknown paths", () => {
+    const vm = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
+    vm.scan(FIXTURE);
+    assertEqual(vm.loadNoteContent("does-not-exist.md"), null);
+  });
 });
 
 describe("VaultModel.saveNote", () => {
@@ -113,8 +138,7 @@ describe("VaultModel.saveNote", () => {
       const result = vm.saveNote("a.md", "# A modified", before.mtime);
       assertTrue(result.ok, "save should succeed");
       assertTrue(!result.conflict, "no conflict expected");
-      const after = vm.getNote("a.md");
-      assertTrue(after.content.includes("A modified"), "content updated");
+      assertTrue(vm.loadNoteContent("a.md").includes("A modified"), "content updated via loadNoteContent");
     } finally { cleanup(tmp); }
   });
 
@@ -181,7 +205,7 @@ describe("VaultModel.rescanFiles", () => {
       fs.writeFileSync(path.join(tmp, "b.md"), "# B updated");
       const diff = vm.rescanFiles(tmp, walkEntries(tmp));
       assertDeepEqual(diff.changed, ["b.md"]);
-      assertTrue(vm.getNote("b.md").content.includes("updated"), "content reloaded");
+      assertTrue(vm.loadNoteContent("b.md").includes("updated"), "content reloaded via loadNoteContent");
     } finally { cleanup(tmp); }
   });
 

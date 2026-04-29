@@ -59,8 +59,7 @@ function createVaultModel(opts) {
             absPath: absPath,
             basename: basename,
             title: title,
-            content: content,
-            body: body,
+            // content / body intentionally dropped — see loadNoteContent()
             frontmatter: frontmatter,
             aliases: aliases,
             tags: tags,
@@ -122,6 +121,37 @@ function createVaultModel(opts) {
         emit("ready");
     }
 
+    function hydrateFromCache(rp, cachedNotes) {
+        // CRITICAL: set rootPath BEFORE constructing absPaths. Without this,
+        // loadNoteContent would fail for every cached note that the
+        // subsequent rescan doesn't re-parse.
+        rootPath = rp;
+        notes.clear();
+        byBasename.clear();
+        var sep = fs.sep;
+        var sepEnd = rp.endsWith(sep);
+        for (var i = 0; i < cachedNotes.length; i++) {
+            var c = cachedNotes[i];
+            var relWithSep = c.path.split("/").join(sep);
+            var note = {
+                path: c.path,
+                absPath: rp + (sepEnd ? "" : sep) + relWithSep,
+                basename: c.basename,
+                title: c.title,
+                frontmatter: c.frontmatter || {},
+                aliases: c.aliases || [],
+                tags: c.tags || [],
+                wikilinksRaw: c.wikilinksRaw || [],
+                outgoingLinks: [],  // populated by resolveAllLinks() below
+                mtime: c.mtime || 0,
+            };
+            notes.set(note.path, note);
+            indexBasename(note);
+        }
+        resolveAllLinks();
+        emit("ready");
+    }
+
     function scanFiles(rp, absPathList) {
         rootPath = rp;
         notes.clear();
@@ -139,6 +169,41 @@ function createVaultModel(opts) {
         }
         resolveAllLinks();
         emit("ready");
+    }
+
+    function scanFilesAsync(rp, absPathList, chunkSize, onProgress, onDone) {
+        rootPath = rp;
+        notes.clear();
+        byBasename.clear();
+        chunkSize = chunkSize || 200;
+        var i = 0;
+        function step() {
+            var end = Math.min(i + chunkSize, absPathList.length);
+            for (; i < end; i++) {
+                try {
+                    var note = parseNoteFile(absPathList[i]);
+                    notes.set(note.path, note);
+                    indexBasename(note);
+                } catch (e) {
+                    if (typeof console !== "undefined") {
+                        console.warn("[vault] parse failed:", absPathList[i], e && e.message);
+                    }
+                }
+            }
+            if (onProgress) onProgress(i, absPathList.length);
+            if (i >= absPathList.length) {
+                resolveAllLinks();
+                emit("ready");
+                if (onDone) onDone();
+                return;
+            }
+            // Yield. In QML use Qt.callLater (caller injects scheduler); under Node
+            // fall back to setImmediate so the test runner doesn't stall.
+            if (typeof Qt !== "undefined" && Qt.callLater) Qt.callLater(step);
+            else if (typeof setImmediate !== "undefined") setImmediate(step);
+            else step();  // last-resort sync fallback
+        }
+        step();
     }
 
     function noteCount() { return notes.size; }
@@ -230,6 +295,19 @@ function createVaultModel(opts) {
         emit("noteRemoved", rel);
     }
 
+    function loadNoteContent(relPath) {
+        var note = notes.get(relPath);
+        if (!note) return null;
+        try {
+            return fs.readFileSync(note.absPath);
+        } catch (e) {
+            if (typeof console !== "undefined") {
+                console.warn("[vault] loadNoteContent failed:", note.absPath, e && e.message);
+            }
+            return null;
+        }
+    }
+
     // Dual-mode: pass a callback to use an async fs.writeFile (required under
     // QML — sync XHR PUT is broken on file:// in Qt 6.11). Without a callback
     // we fall back to fs.writeFileSync, which is what the Node tests inject.
@@ -272,6 +350,8 @@ function createVaultModel(opts) {
     return {
         scan: scan,
         scanFiles: scanFiles,
+        scanFilesAsync: scanFilesAsync,
+        hydrateFromCache: hydrateFromCache,
         on: on,
         noteCount: noteCount,
         getNote: getNote,
@@ -281,6 +361,7 @@ function createVaultModel(opts) {
         rescanFiles: rescanFiles,
         removeNote: removeNote,
         saveNote: saveNote,
+        loadNoteContent: loadNoteContent,
     };
 }
 

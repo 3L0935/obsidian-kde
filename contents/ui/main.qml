@@ -10,6 +10,7 @@ import "../code/vault.js" as VaultJs
 import "../code/markdown.js" as MarkdownJs
 import "../code/qml-fs.js" as QmlFs
 import "../code/screen-resolver.js" as ScreenResolver
+import "../code/index-cache.js" as IndexCache
 
 PlasmoidItem {
     id: root
@@ -36,6 +37,16 @@ PlasmoidItem {
     // externally. PageView reads this tick in its note binding to re-pull
     // fresh content from the vault cache after the async walk completes.
     property int _pageReloadTick: 0
+    property int lastRssKb: 0
+    // Persistent index-cache state: resolved on first save, then reused.
+    // _cachedPositions holds {path: {x,y}} from a hydrated cache so the
+    // GraphView simulation can apply them once the sim is created (the sim
+    // doesn't exist at hydrate time, only after vaultReady triggers the
+    // GraphView delegate). _currentSim is set by VaultView when its
+    // GraphView mounts so _saveCache can read live positions.
+    property string _cacheDirPath: ""
+    property var _cachedPositions: ({})
+    property var _currentSim: null
 
     FsHelper { id: fsHelper }
 
@@ -64,6 +75,49 @@ PlasmoidItem {
             var cmd = "qdbus6 org.kde.KWin /KWin activeOutputName 2>/dev/null || qdbus org.kde.KWin /KWin activeOutputName 2>/dev/null || echo ''"
             connectSource(cmd)
         }
+    }
+
+    Plasma5Support.DataSource {
+        id: rssRunner
+        engine: "executable"
+        connectedSources: []
+        onNewData: (sourceName, data) => {
+            disconnectSource(sourceName)
+            var out = ((data && data["stdout"]) || "").trim()
+            var m = out.match(/(\d+)/)
+            if (m) root.lastRssKb = parseInt(m[1], 10)
+        }
+    }
+
+    // Separate DataSource so the cache-dir resolution doesn't collide with
+    // dbusRunner's _pendingCallback (e.g. if the user activates the overlay
+    // shortcut during the initial $HOME query). _cb is per-instance.
+    Plasma5Support.DataSource {
+        id: cacheRunner
+        engine: "executable"
+        connectedSources: []
+        property var _cb: null
+        onNewData: (sourceName, data) => {
+            disconnectSource(sourceName)
+            var out = ((data && data["stdout"]) || "").trim()
+            if (_cb) { var f = _cb; _cb = null; f(out) }
+        }
+        function run(cmd, cb) {
+            _cb = cb
+            connectSource(cmd)
+        }
+    }
+
+    Timer {
+        id: rssSamplerTimer
+        interval: 2000
+        running: Plasmoid.configuration.perfDebug
+        repeat: true
+        // /proc/self/status would point to the awk child, not us. $PPID in
+        // the shell expands to the shell's parent — i.e. plasmoidviewer or
+        // plasmashell. Expected normal range: 200-500 MB. 4MB means we're
+        // still looking at the wrong process.
+        onTriggered: rssRunner.connectSource("grep VmRSS /proc/$PPID/status | awk '{print $2}'")
     }
 
     function _rgbIntToHex(rgb) {
@@ -108,25 +162,37 @@ PlasmoidItem {
         return false
     }
 
-    function _loadGraphConfig(vaultPath) {
-        try {
-            var xhr = new XMLHttpRequest()
-            xhr.open("GET", "file://" + vaultPath + "/.obsidian/graph.json", false)
-            xhr.send(null)
-            if (xhr.status !== 200 && xhr.status !== 0) return []
-            var data = JSON.parse(xhr.responseText)
-            var raw = data.colorGroups || []
+    // Cache for color-group memoization. _cachedGraphHash is the djb2 hash of
+    // the parsed groups blob. _cachedGraphGroups is the last parsed groups
+    // array. Recomputation of nodeColors only happens when the hash changes,
+    // saving ~50k match ops per rescan on a 5000-note vault.
+    property string _cachedGraphHash: ""
+    property var _cachedGraphGroups: []
+
+    function _refreshGraphColors(vaultPath, doneCb) {
+        if (!vaultPath) { if (doneCb) doneCb(false); return }
+        fsHelper.readJsonFile(vaultPath + "/.obsidian/graph.json", function (data) {
             var groups = []
-            for (var i = 0; i < raw.length; i++) {
-                var g = raw[i]
-                if (!g || !g.color) continue
-                groups.push({ query: g.query || "", color: _rgbIntToHex(g.color.rgb) })
+            if (data && Array.isArray(data.colorGroups)) {
+                for (var i = 0; i < data.colorGroups.length; i++) {
+                    var g = data.colorGroups[i]
+                    if (!g || !g.color) continue
+                    groups.push({ query: g.query || "", color: _rgbIntToHex(g.color.rgb) })
+                }
             }
-            return groups
-        } catch (e) {
-            console.warn("[obsidian-kde] graph.json load failed:", e)
-            return []
-        }
+            // Hash via JSON.stringify of the groups array. Cheap and stable.
+            var serialized = JSON.stringify(groups)
+            var h = _hashStr(serialized)
+            if (h === root._cachedGraphHash) {
+                // No change — skip the O(N×G) recomputation.
+                if (doneCb) doneCb(false)
+                return
+            }
+            root._cachedGraphHash = h
+            root._cachedGraphGroups = groups
+            root.nodeColors = _computeNodeColors(groups)
+            if (doneCb) doneCb(true)
+        })
     }
 
     function _computeNodeColors(groups) {
@@ -152,6 +218,82 @@ PlasmoidItem {
         return base
     }
 
+    // Cheap djb2 hash so we can have one cache file per vault path without
+    // worrying about path-encoding collisions across filesystems. Result
+    // is hex-encoded; collisions on practical vault-path counts are nil.
+    function _hashStr(s) {
+        var h = 5381
+        for (var i = 0; i < s.length; i++) {
+            h = ((h << 5) + h) + s.charCodeAt(i)
+            h = h & 0xffffffff
+        }
+        return (h >>> 0).toString(16)
+    }
+
+    function _cachePath(vaultPath) {
+        if (!root._cacheDirPath) return ""
+        return root._cacheDirPath + "/" + _hashStr(vaultPath) + ".json"
+    }
+
+    // Resolve $HOME via the executable engine once, then mkdir -p the
+    // cache dir. Subsequent calls hit the cached value. Both shell calls
+    // are sequential — _cb is single-slot but never overlaps here.
+    function _resolveCacheDir(cb) {
+        if (root._cacheDirPath) { cb(root._cacheDirPath); return }
+        cacheRunner.run("echo $HOME", function (home) {
+            if (!home) { cb(""); return }
+            root._cacheDirPath = home + "/.cache/obsidian-kde"
+            cacheRunner.run("mkdir -p " + JSON.stringify(root._cacheDirPath), function () {
+                cb(root._cacheDirPath)
+            })
+        })
+    }
+
+    function _saveCache() {
+        if (!root.vault || !Plasmoid.configuration.vaultPath || !root._cacheDirPath) return
+        var positions = {}
+        if (root._currentSim) {
+            try {
+                var nodes = root._currentSim.getNodes()
+                for (var i = 0; i < nodes.length; i++) {
+                    positions[nodes[i].id] = { x: nodes[i].x, y: nodes[i].y }
+                }
+            } catch (e) {
+                // sim may have been torn down between vaultReady toggles —
+                // fall through with empty positions, the cache still beats
+                // a full re-walk on next launch.
+            }
+        }
+        var blob = IndexCache.serializeIndex({
+            vaultPath: Plasmoid.configuration.vaultPath,
+            notes: root.vault.allNotes(),
+            positions: positions,
+        })
+        var p = _cachePath(Plasmoid.configuration.vaultPath)
+        fsHelper.writeJsonFile(p, blob, function (ok) {
+            if (!ok) console.warn("[obsidian-kde] cache write failed:", p)
+        })
+    }
+
+    // Apply cached positions to a freshly-built simulation. Called by
+    // VaultView when it sets _currentSim after mounting GraphView. Only
+    // touches nodes for which we have a stored (non-zero) position; the
+    // others keep their random spawn so newly-added notes blend in.
+    function _applyCachedPositionsToSim() {
+        if (!root._currentSim) return
+        var pos = root._cachedPositions || {}
+        if (Object.keys(pos).length === 0) return
+        try {
+            var nodes = root._currentSim.getNodes()
+            for (var i = 0; i < nodes.length; i++) {
+                var p = pos[nodes[i].id]
+                if (p) { nodes[i].x = p.x; nodes[i].y = p.y }
+            }
+        } catch (e) {
+            console.warn("[obsidian-kde] applyCachedPositions failed:", e)
+        }
+    }
+
     function _normalizePinnedPath(raw, vaultPath) {
         if (!raw) return ""
         var p = String(raw)
@@ -169,13 +311,61 @@ PlasmoidItem {
         root.vault.on("ready", function () { root.vaultReady = true })
 
         const vaultPath = Plasmoid.configuration.vaultPath
-        fsHelper.walkVault(vaultPath, function (entries) {
-            try {
+        // Reset any stale cached positions left from a previous vault.
+        root._cachedPositions = ({})
+        // Reset color-group memoization so a vault switch forces recomputation.
+        root._cachedGraphHash = ""
+        root._cachedGraphGroups = []
+
+        _resolveCacheDir(function () {
+            var cachePath = _cachePath(vaultPath)
+            // No cache dir resolved → fall through to full scan only.
+            var doFullScan = function (entries) {
                 var paths = entries.map(function (e) { return e.path })
-                root.vault.scanFiles(vaultPath, paths)
-                root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
-            } catch (e) {
-                console.warn("[obsidian-kde] scanFiles failed:", e, e.stack)
+                root.vault.scanFilesAsync(vaultPath, paths, 200,
+                    function (done, total) {
+                        if (done % 1000 === 0) console.log("[obsidian-kde] scanned " + done + "/" + total)
+                    },
+                    function () {
+                        _refreshGraphColors(vaultPath, null)
+                        _saveCache()
+                    }
+                )
+            }
+
+            var afterCacheRead = function (cacheBlob) {
+                var hydrated = cacheBlob ? IndexCache.hydrateIndex(cacheBlob) : null
+                fsHelper.walkVault(vaultPath, function (entries) {
+                    try {
+                        if (hydrated && hydrated.vaultPath === vaultPath) {
+                            // Fast path: hydrate metadata from cache, then
+                            // diff against the walk. rescanFiles re-parses
+                            // only mtime-changed files, leaves the rest alone.
+                            root.vault.hydrateFromCache(vaultPath, hydrated.notes)
+                            root.vault.rescanFiles(vaultPath, entries)
+                            // Stash positions so VaultView can apply them
+                            // when it mounts GraphView.
+                            var pos = {}
+                            for (var i = 0; i < hydrated.notes.length; i++) {
+                                var hn = hydrated.notes[i]
+                                if (hn.x !== 0 || hn.y !== 0) pos[hn.path] = { x: hn.x, y: hn.y }
+                            }
+                            root._cachedPositions = pos
+                            _refreshGraphColors(vaultPath, null)
+                            _saveCache()
+                        } else {
+                            doFullScan(entries)
+                        }
+                    } catch (e) {
+                        console.warn("[obsidian-kde] _initVault failed:", e, e.stack)
+                    }
+                })
+            }
+
+            if (cachePath) {
+                fsHelper.readJsonFile(cachePath, afterCacheRead)
+            } else {
+                fsHelper.walkVault(vaultPath, doFullScan)
             }
         })
 
@@ -185,6 +375,17 @@ PlasmoidItem {
         } else {
             root.currentView = "graph"
         }
+    }
+
+    // Periodic cache writer so positions and any newly-added notes
+    // (rescan after a press, etc.) get persisted without waiting for
+    // a clean shutdown signal we don't have.
+    Timer {
+        id: cacheSaveTimer
+        interval: 30000
+        repeat: true
+        running: root.vaultReady
+        onTriggered: _saveCache()
     }
 
     // On-demand vault rescan. Only guard is _rescanInFlight so a caller
@@ -203,7 +404,7 @@ PlasmoidItem {
             try {
                 var diff = root.vault.rescanFiles(vaultPath, entries)
                 if (diff.added.length || diff.changed.length || diff.removed.length) {
-                    root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                    _refreshGraphColors(vaultPath, null)
                 }
                 // If the currently-displayed note was modified externally,
                 // nudge PageView so its binding re-reads from the cache.

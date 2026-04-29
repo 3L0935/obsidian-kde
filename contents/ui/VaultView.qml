@@ -51,6 +51,11 @@ Item {
             nodeColors: view.stateOwner ? view.stateOwner.nodeColors : ({})
             showLabels: Plasmoid.configuration.showLabels
             labelFontSize: Plasmoid.configuration.graphLabelFontSize
+            perfDebug: Plasmoid.configuration.perfDebug
+            lastRssKb: view.stateOwner ? view.stateOwner.lastRssKb : 0
+            autoPauseHidden: Plasmoid.configuration.perfAutoPauseHidden
+            perfLabelZoomThreshold: Plasmoid.configuration.perfLabelZoomThreshold
+            perfEdgeZoomThreshold: Plasmoid.configuration.perfEdgeZoomThreshold
             physicsConfig: ({
                 repulsion: Plasmoid.configuration.physicsRepulsion,
                 springLength: Plasmoid.configuration.physicsSpringLength,
@@ -71,6 +76,13 @@ Item {
                 view.stateOwner._rescanVault(function (diff) {
                     graphInst.applyVaultDiff(diff)
                 })
+            }
+            onSimReady: (s) => {
+                if (!view.stateOwner) return
+                view.stateOwner._currentSim = s
+                if (view.stateOwner._applyCachedPositionsToSim) {
+                    view.stateOwner._applyCachedPositionsToSim()
+                }
             }
         }
     }
