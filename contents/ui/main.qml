@@ -193,10 +193,16 @@ PlasmoidItem {
         fsHelper.walkVault(vaultPath, function (entries) {
             try {
                 var paths = entries.map(function (e) { return e.path })
-                root.vault.scanFiles(vaultPath, paths)
-                root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                root.vault.scanFilesAsync(vaultPath, paths, 200,
+                    function (done, total) {
+                        if (done % 1000 === 0) console.log("[obsidian-kde] scanned " + done + "/" + total)
+                    },
+                    function () {
+                        root.nodeColors = _computeNodeColors(_loadGraphConfig(vaultPath))
+                    }
+                )
             } catch (e) {
-                console.warn("[obsidian-kde] scanFiles failed:", e, e.stack)
+                console.warn("[obsidian-kde] scanFilesAsync failed:", e, e.stack)
             }
         })
 

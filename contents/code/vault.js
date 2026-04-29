@@ -140,6 +140,41 @@ function createVaultModel(opts) {
         emit("ready");
     }
 
+    function scanFilesAsync(rp, absPathList, chunkSize, onProgress, onDone) {
+        rootPath = rp;
+        notes.clear();
+        byBasename.clear();
+        chunkSize = chunkSize || 200;
+        var i = 0;
+        function step() {
+            var end = Math.min(i + chunkSize, absPathList.length);
+            for (; i < end; i++) {
+                try {
+                    var note = parseNoteFile(absPathList[i]);
+                    notes.set(note.path, note);
+                    indexBasename(note);
+                } catch (e) {
+                    if (typeof console !== "undefined") {
+                        console.warn("[vault] parse failed:", absPathList[i], e && e.message);
+                    }
+                }
+            }
+            if (onProgress) onProgress(i, absPathList.length);
+            if (i >= absPathList.length) {
+                resolveAllLinks();
+                emit("ready");
+                if (onDone) onDone();
+                return;
+            }
+            // Yield. In QML use Qt.callLater (caller injects scheduler); under Node
+            // fall back to setImmediate so the test runner doesn't stall.
+            if (typeof Qt !== "undefined" && Qt.callLater) Qt.callLater(step);
+            else if (typeof setImmediate !== "undefined") setImmediate(step);
+            else step();  // last-resort sync fallback
+        }
+        step();
+    }
+
     function noteCount() { return notes.size; }
     function getNote(relPath) { return notes.get(relPath) || null; }
     function allNotes() { return Array.from(notes.values()); }
@@ -284,6 +319,7 @@ function createVaultModel(opts) {
     return {
         scan: scan,
         scanFiles: scanFiles,
+        scanFilesAsync: scanFilesAsync,
         on: on,
         noteCount: noteCount,
         getNote: getNote,
