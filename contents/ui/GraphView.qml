@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import org.kde.kirigami as Kirigami
 import "../code/graph-physics.js" as Physics
+import "../code/perf-probe.js" as PerfProbe
 
 Item {
     id: root
@@ -24,6 +25,10 @@ Item {
     property real panX: 0
     property real panY: 0
     property real zoom: 1.0
+
+    property bool perfDebug: false
+    property int lastRssKb: 0
+    property var _probe: PerfProbe.createProbe({ window: 120 })
 
     property string selectedNodeId: ""
 
@@ -96,7 +101,9 @@ Item {
         running: root.sim !== null
         repeat: true
         onTriggered: {
+            var t0 = Date.now()
             root.sim.tick()
+            root._probe.record("tick", Date.now() - t0)
             // Throttle only: at rest we tick at 5 FPS. Never fully stop —
             // resuming from a hard stop causes visible snaps because velocity
             // residuals balance the graph and re-applying forces after a gap
@@ -117,6 +124,7 @@ Item {
         anchors.fill: parent
 
         onPaint: {
+            var paintT0 = Date.now()
             const ctx = getContext("2d")
             ctx.reset()
             ctx.clearRect(0, 0, width, height)
@@ -207,7 +215,54 @@ Item {
             }
 
             ctx.restore()
+            root._probe.record("paint", Date.now() - paintT0)
+            root._probe.record("frame", Date.now())
         }
+    }
+
+    Rectangle {
+        visible: root.perfDebug
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.margins: 4
+        color: Qt.rgba(0, 0, 0, 0.6)
+        radius: 3
+        width: hudText.implicitWidth + 8
+        height: hudText.implicitHeight + 4
+        z: 100  // sit above the canvas but below modal selection ring (none)
+
+        Timer {
+            interval: 500
+            running: root.perfDebug
+            repeat: true
+            onTriggered: hudText.text = root._fmtStats()
+        }
+
+        Text {
+            id: hudText
+            anchors.centerIn: parent
+            font.family: "monospace"
+            font.pixelSize: 10
+            color: "#0f0"
+        }
+    }
+
+    function _fmtStats() {
+        var tick = root._probe.stats("tick")
+        var paint = root._probe.stats("paint")
+        var frame = root._probe.stats("frame")
+        var fps = 0
+        if (frame.count > 1) {
+            var span = frame.max - frame.min
+            fps = span > 0 ? ((frame.count - 1) * 1000 / span) : 0
+        }
+        var n = root.sim ? root.sim.getNodes().length : 0
+        var rssMb = root.lastRssKb > 0 ? (root.lastRssKb / 1024).toFixed(0) + "MB" : "?"
+        return "FPS " + fps.toFixed(0) +
+               "  tick " + tick.p50 + "/" + tick.p95 + "ms" +
+               "  paint " + paint.p50 + "/" + paint.p95 + "ms" +
+               "  N=" + n +
+               "  RSS=" + rssMb
     }
 
     MouseArea {

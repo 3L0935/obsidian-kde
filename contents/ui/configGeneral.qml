@@ -32,6 +32,7 @@ Kirigami.FormLayout {
     property string cfg_overlayShortcut: "Meta+O"
     property alias cfg_overlayDimAlpha: overlayDimSlider.value
     property alias cfg_overlayCloseOnFocusLost: overlayCloseOnFocusCheck.checked
+    property alias cfg_perfDebug: perfDebugCheck.checked
 
     RowLayout {
         Kirigami.FormData.label: i18n("Vault path:")
@@ -275,6 +276,18 @@ Kirigami.FormLayout {
         enabled: overlayEnabledCheck.checked
         text: i18n("Hide the overlay when another window gains focus")
         checked: true
+    }
+
+    Kirigami.Separator {
+        Kirigami.FormData.isSection: true
+        Kirigami.FormData.label: i18n("Performance")
+    }
+
+    CheckBox {
+        id: perfDebugCheck
+        Kirigami.FormData.label: i18n("Debug overlay (FPS):")
+        text: i18n("Show FPS / tick / paint stats over the graph")
+        checked: false
     }
 
     Component.onCompleted: {

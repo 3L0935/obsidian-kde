@@ -51,6 +51,8 @@ Item {
             nodeColors: view.stateOwner ? view.stateOwner.nodeColors : ({})
             showLabels: Plasmoid.configuration.showLabels
             labelFontSize: Plasmoid.configuration.graphLabelFontSize
+            perfDebug: Plasmoid.configuration.perfDebug
+            lastRssKb: view.stateOwner ? view.stateOwner.lastRssKb : 0
             physicsConfig: ({
                 repulsion: Plasmoid.configuration.physicsRepulsion,
                 springLength: Plasmoid.configuration.physicsSpringLength,

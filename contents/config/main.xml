@@ -58,5 +58,6 @@
         <entry name="overlayCloseOnFocusLost" type="Bool">
             <default>true</default>
         </entry>
+        <entry name="perfDebug" type="Bool"><default>false</default></entry>
     </group>
 </kcfg>

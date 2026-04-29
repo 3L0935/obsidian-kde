@@ -36,6 +36,7 @@ PlasmoidItem {
     // externally. PageView reads this tick in its note binding to re-pull
     // fresh content from the vault cache after the async walk completes.
     property int _pageReloadTick: 0
+    property int lastRssKb: 0
 
     FsHelper { id: fsHelper }
 
@@ -64,6 +65,26 @@ PlasmoidItem {
             var cmd = "qdbus6 org.kde.KWin /KWin activeOutputName 2>/dev/null || qdbus org.kde.KWin /KWin activeOutputName 2>/dev/null || echo ''"
             connectSource(cmd)
         }
+    }
+
+    Plasma5Support.DataSource {
+        id: rssRunner
+        engine: "executable"
+        connectedSources: []
+        onNewData: (sourceName, data) => {
+            disconnectSource(sourceName)
+            var out = ((data && data["stdout"]) || "").trim()
+            var m = out.match(/(\d+)/)
+            if (m) root.lastRssKb = parseInt(m[1], 10)
+        }
+    }
+
+    Timer {
+        id: rssSamplerTimer
+        interval: 2000
+        running: Plasmoid.configuration.perfDebug
+        repeat: true
+        onTriggered: rssRunner.connectSource("grep VmRSS /proc/self/status | awk '{print $2}'")
     }
 
     function _rgbIntToHex(rgb) {
