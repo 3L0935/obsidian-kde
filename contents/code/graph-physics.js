@@ -20,9 +20,26 @@ function createSimulation(opts) {
     var nodeById = new Map();
     var edges = [];
     var frozenBounds = null;  // { minX, minY, maxX, maxY } or null when no freeze active
+    // Set by setGraph before any randomPos() call, so spawn radius can scale
+    // with the FINAL expected node count rather than the (still-growing) live
+    // array length during construction.
+    var _expectedN = 0;
+
+    // Spawn radius scales with sqrt(N) and the spring length so dense vaults
+    // don't all spawn on top of each other. With N=5000 and springLength=150,
+    // half-size ≈ 5300 units — each node gets ~150 unit² to itself, matching
+    // the spring rest length. Otherwise the quadtree degenerates trying to
+    // separate hundreds of overlapping bodies on tick 1, and the physics tick
+    // can take 100x longer for the first few seconds.
+    function spawnHalfSize() {
+        var n = _expectedN || nodes.length;
+        if (n < 4) return 100;
+        return Math.sqrt(n) * (cfg.springLength * 0.5);
+    }
 
     function randomPos() {
-        return { x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200 };
+        var h = spawnHalfSize();
+        return { x: (Math.random() - 0.5) * h * 2, y: (Math.random() - 0.5) * h * 2 };
     }
 
     function ensureNode(spec) {
@@ -34,6 +51,7 @@ function createSimulation(opts) {
         nodes.length = 0;
         nodeById.clear();
         edges.length = 0;
+        _expectedN = nodeSpecs.length;
         for (var s of nodeSpecs) {
             var n = ensureNode(s);
             nodes.push(n);

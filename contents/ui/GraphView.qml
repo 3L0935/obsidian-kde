@@ -432,8 +432,8 @@ Item {
             }
             const factor = ev.angleDelta.y > 0 ? 1.1 : (1 / 1.1)
             root.zoom *= factor
-            if (root.zoom < 0.1) root.zoom = 0.1
-            if (root.zoom > 5.0) root.zoom = 5.0
+            if (root.zoom < 0.05) root.zoom = 0.05
+            if (root.zoom > 20.0) root.zoom = 20.0
             root.panX = mx - root.width / 2 - worldBefore.x * root.zoom
             root.panY = my - root.height / 2 - worldBefore.y * root.zoom
             canvas.requestPaint()
