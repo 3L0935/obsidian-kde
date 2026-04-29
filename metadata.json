@@ -7,7 +7,7 @@
     "Id": "org.kde.plasma.obsidianwidget",
     "License": "MIT",
     "Name": "Obsidian Vault",
-    "Version": "0.5.3",
+    "Version": "0.6.0",
     "Website": ""
   },
   "KPackageStructure": "Plasma/Applet",

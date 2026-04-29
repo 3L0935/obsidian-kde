@@ -202,6 +202,23 @@ an in-progress edit, press again to close the overlay.
 Multiple instances are fully independent — you can drop a `pinned` card for a
 project TODO and a `dynamic` graph for navigating, side by side.
 
+### Performance
+
+Defaults are tuned for vaults of any size up to ~10 000 notes. The widget
+freezes off-screen nodes, culls invisible primitives, persists the index to
+`~/.cache/obsidian-kde/`, and pauses physics when the window is hidden.
+
+| Setting                  | Default | Description                                                                |
+|--------------------------|---------|----------------------------------------------------------------------------|
+| Debug overlay (FPS)      | off     | Tiny green-on-black HUD over the graph showing FPS, tick/paint times, node count, RSS. |
+| Auto-pause when hidden   | on      | Stop physics ticks when the widget's window isn't active or visible.       |
+| Hide labels below zoom   | 1.0×    | Below this zoom level, node labels are not drawn (illegible at small zoom and dominate paint cost). |
+| Hide edges below zoom    | 0.3×    | Below this zoom level (and on graphs with > 500 edges), edges are skipped. Always drawn under selection. |
+
+The first launch on a new vault parses every markdown file to build the
+in-RAM index; subsequent launches read the cached metadata + node positions
+from disk and only re-parse files whose mtime has changed since.
+
 ## Obsidian compatibility
 
 What works:
