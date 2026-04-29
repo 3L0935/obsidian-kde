@@ -416,6 +416,20 @@ function createSimulation(opts) {
         return c;
     }
 
+    function hitTest(x, y, radius) {
+        var r2 = radius * radius;
+        var best = null;
+        var bestD2 = r2;
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            var dx = n.x - x;
+            var dy = n.y - y;
+            var d2 = dx * dx + dy * dy;
+            if (d2 <= bestD2) { best = n; bestD2 = d2; }
+        }
+        return best;
+    }
+
     function updateConfig(opts) {
         if (!opts) return;
         for (var k in opts) {
@@ -442,6 +456,7 @@ function createSimulation(opts) {
         kineticEnergy: kineticEnergy,
         unfrozenCount: unfrozenCount,
         centroid: centroid,
+        hitTest: hitTest,
     };
 }
 

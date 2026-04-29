@@ -409,11 +409,7 @@ Item {
             // it stays at least ~14 screen pixels wide at any zoom level and
             // never shrinks below the visible glyph.
             const r = Math.max(14 / root.zoom, 6)
-            for (const n of root.sim.getNodes()) {
-                const dx = n.x - w.x, dy = n.y - w.y
-                if (dx * dx + dy * dy <= r * r) return n
-            }
-            return null
+            return root.sim.hitTest(w.x, w.y, r)
         }
 
         onPressed: (e) => {
