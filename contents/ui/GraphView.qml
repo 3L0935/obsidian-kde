@@ -31,6 +31,13 @@ Item {
     property int lastRssKb: 0
     property var _probe: PerfProbe.createProbe({ window: 120 })
 
+    // View-bounds cache: written by Canvas.onPaint after computing world-space
+    // viewport, read by physicsTimer.onTriggered to freeze off-screen nodes.
+    property real _viewMinX: -Infinity
+    property real _viewMaxX:  Infinity
+    property real _viewMinY: -Infinity
+    property real _viewMaxY:  Infinity
+
     property bool autoPauseHidden: true
 
     // Physics runs only when:
@@ -120,6 +127,16 @@ Item {
         running: root._shouldRun
         repeat: true
         onTriggered: {
+            if (root._viewMinX > -Infinity) {
+                // 50% extra physics margin so nodes drifting in from off-screen
+                // don't pop visually — they get a few ticks of warm-up before
+                // becoming visible.
+                var pm = (root._viewMaxX - root._viewMinX) * 0.5
+                root.sim.freezeOutsideBounds(
+                    root._viewMinX - pm, root._viewMinY - pm,
+                    root._viewMaxX + pm, root._viewMaxY + pm,
+                )
+            }
             var t0 = Date.now()
             root.sim.tick()
             root._probe.record("tick", Date.now() - t0)
@@ -170,6 +187,11 @@ Item {
                 return n.x >= viewMinX && n.x <= viewMaxX
                     && n.y >= viewMinY && n.y <= viewMaxY
             }
+
+            root._viewMinX = viewMinX
+            root._viewMaxX = viewMaxX
+            root._viewMinY = viewMinY
+            root._viewMaxY = viewMaxY
 
             const edges = root.sim.getEdges()
             const nodes = root.sim.getNodes()

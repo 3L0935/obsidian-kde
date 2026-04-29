@@ -19,6 +19,7 @@ function createSimulation(opts) {
     var nodes = [];
     var nodeById = new Map();
     var edges = [];
+    var frozenBounds = null;  // { minX, minY, maxX, maxY } or null when no freeze active
 
     function randomPos() {
         return { x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200 };
@@ -115,6 +116,23 @@ function createSimulation(opts) {
         n.fx = null; n.fy = null;
     }
 
+    function freezeOutsideBounds(minXOrNull, minY, maxX, maxY, margin) {
+        if (minXOrNull === null || minXOrNull === undefined) { frozenBounds = null; return; }
+        var m = margin || 0;
+        frozenBounds = {
+            minX: minXOrNull - m,
+            minY: minY - m,
+            maxX: maxX + m,
+            maxY: maxY + m,
+        };
+    }
+
+    function isFrozen(n) {
+        if (!frozenBounds) return false;
+        return n.x < frozenBounds.minX || n.x > frozenBounds.maxX
+            || n.y < frozenBounds.minY || n.y > frozenBounds.maxY;
+    }
+
     function newQnode(x, y, size) {
         return { x: x, y: y, size: size, cx: 0, cy: 0, mass: 0, body: null, children: null };
     }
@@ -188,6 +206,7 @@ function createSimulation(opts) {
 
         for (var n of nodes) {
             if (n.fx !== null) continue;
+            if (isFrozen(n)) { n.vx = 0; n.vy = 0; continue; }
             applyRepulsion(tree, n);
         }
 
@@ -195,6 +214,7 @@ function createSimulation(opts) {
             var a = nodeById.get(e.source);
             var b = nodeById.get(e.target);
             if (!a || !b) continue;
+            if (isFrozen(a) && isFrozen(b)) continue;  // skip cost; one-frozen edges still pull the unfrozen end
             var dx = b.x - a.x;
             var dy = b.y - a.y;
             var dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
@@ -202,18 +222,20 @@ function createSimulation(opts) {
             var force = cfg.springK * diff;
             var fx = (dx / dist) * force;
             var fy = (dy / dist) * force;
-            if (a.fx === null) { a.vx += fx; a.vy += fy; }
-            if (b.fx === null) { b.vx -= fx; b.vy -= fy; }
+            if (a.fx === null && !isFrozen(a)) { a.vx += fx; a.vy += fy; }
+            if (b.fx === null && !isFrozen(b)) { b.vx -= fx; b.vy -= fy; }
         }
 
         for (var n2 of nodes) {
             if (n2.fx !== null) continue;
+            if (isFrozen(n2)) continue;  // no centering for frozen
             n2.vx -= n2.x * cfg.centering;
             n2.vy -= n2.y * cfg.centering;
         }
 
         for (var n3 of nodes) {
             if (n3.fx !== null) { n3.x = n3.fx; n3.y = n3.fy; continue; }
+            if (isFrozen(n3)) continue;
             n3.vx *= cfg.damping;
             n3.vy *= cfg.damping;
             if (n3.vx > cfg.maxVelocity) n3.vx = cfg.maxVelocity;
@@ -248,6 +270,7 @@ function createSimulation(opts) {
         setPosition: setPosition,
         pin: pin,
         unpin: unpin,
+        freezeOutsideBounds: freezeOutsideBounds,
         tick: tick,
         updateConfig: updateConfig,
         getNodes: function () { return nodes; },

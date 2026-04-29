@@ -95,3 +95,36 @@ describe("graph-physics", () => {
     assertEqual(sim.getEdges().length, 1);
   });
 });
+
+describe("freezeOutsideBounds", () => {
+    it("nodes outside bounds keep their position and velocity unchanged across a tick", () => {
+        const sim = createSimulation();
+        sim.setGraph(
+            [{ id: "a" }, { id: "b" }, { id: "c" }],
+            [{ source: "a", target: "b" }],
+        );
+        // Place "c" far out so any force we apply would move it.
+        sim.setPosition("c", 10000, 10000);
+        sim.freezeOutsideBounds(-100, -100, 100, 100, 0);
+        const before = { x: sim.getNode("c").x, y: sim.getNode("c").y };
+        sim.tick();
+        const after = sim.getNode("c");
+        assertEqual(after.x, before.x, "frozen node x unchanged");
+        assertEqual(after.y, before.y, "frozen node y unchanged");
+        assertEqual(after.vx, 0);
+        assertEqual(after.vy, 0);
+    });
+
+    it("clearing freeze restores normal motion", () => {
+        const sim = createSimulation();
+        sim.setGraph([{ id: "a" }], []);
+        sim.setPosition("a", 1000, 0);
+        sim.freezeOutsideBounds(-100, -100, 100, 100, 0);
+        sim.tick();
+        const xFrozen = sim.getNode("a").x;
+        sim.freezeOutsideBounds(null);  // clear
+        sim.tick();
+        // With centering pull, x should now drift toward 0.
+        assertTrue(sim.getNode("a").x < xFrozen, "node moves once unfrozen");
+    });
+});
