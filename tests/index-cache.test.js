@@ -94,4 +94,66 @@ describe("hydrate → rescan pipeline", () => {
         const c = vm2.loadNoteContent("foo.md");
         assertTrue(c !== null && c.includes("Foo"), "loadNoteContent works after pure hydrate");
     });
+
+    it("byBasename is populated after hydrate (wikilinks resolve)", () => {
+        const vm1 = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
+        vm1.scan(FIXTURE);
+        const expectedEdges = vm1.getEdges().length;
+
+        const blob = serializeIndex({
+            vaultPath: FIXTURE,
+            notes: vm1.allNotes(),
+            positions: {},
+        });
+        const vm2 = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
+        const hydrated = hydrateIndex(blob);
+        vm2.hydrateFromCache(FIXTURE, hydrated.notes);
+
+        // After hydrate, getEdges() must produce the same set as a fresh scan.
+        // If indexBasename was skipped or resolveAllLinks fired before
+        // basenames were indexed, edges would silently disappear.
+        assertEqual(vm2.getEdges().length, expectedEdges);
+    });
+
+    it("hydrate + rescan adds a new note that links to a hydrated one", () => {
+        const tmp = path.join(__dirname, "_tmp_hydrate_add_" + Date.now());
+        fs.mkdirSync(tmp);
+        fs.writeFileSync(path.join(tmp, "a.md"), "# A");
+        fs.writeFileSync(path.join(tmp, "b.md"), "# B\nLinks to [[a]]");
+        try {
+            const vm1 = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
+            vm1.scan(tmp);
+
+            // Serialize ONLY a.md (simulating: cache was written before b.md
+            // existed; b.md is a "new" file the next session sees).
+            const aOnly = vm1.allNotes().filter((n) => n.path === "a.md");
+            const blob = serializeIndex({
+                vaultPath: tmp,
+                notes: aOnly,
+                positions: {},
+            });
+
+            const vm2 = createVaultModel({ fs: nodeFs(), markdown: markdownModule });
+            const hydrated = hydrateIndex(blob);
+            vm2.hydrateFromCache(tmp, hydrated.notes);
+
+            // Rescan with both a.md and b.md present on disk.
+            const entries = ["a.md", "b.md"].map((name) => {
+                const abs = path.join(tmp, name);
+                return { path: abs, mtime: fs.statSync(abs).mtimeMs };
+            });
+            const diff = vm2.rescanFiles(tmp, entries);
+            assertDeepEqual(diff.added, ["b.md"]);
+
+            // The new b.md must resolve its [[a]] wikilink to the hydrated
+            // a.md note. If byBasename wasn't populated by hydrateFromCache,
+            // resolveAllLinks() (called by addOrUpdateNote inside rescanFiles)
+            // would not find "a" and outgoingLinks would be empty.
+            const b = vm2.getNote("b.md");
+            assertDeepEqual(b.outgoingLinks, ["a.md"]);
+        } finally {
+            for (const f of fs.readdirSync(tmp)) fs.unlinkSync(path.join(tmp, f));
+            fs.rmdirSync(tmp);
+        }
+    });
 });

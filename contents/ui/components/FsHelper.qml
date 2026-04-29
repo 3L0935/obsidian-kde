@@ -8,6 +8,13 @@ QtObject {
     property var _pending: ({})
     property int _nextToken: 0
 
+    // Per-path serialization. Concurrent writes to the same file via XHR PUT
+    // can corrupt it; we serialize them with a path-keyed in-flight flag and
+    // collapse intermediate writes (only the latest payload matters for an
+    // index cache).
+    property var _writesInFlight: ({})
+    property var _writesPending: ({})
+
     // walkVault(rootPath, doneCallback)
     //   Recursively walks rootPath, collecting {path, mtime} entries for all
     //   *.md files. The mtime is read from FolderListModel's fileModified role
@@ -127,16 +134,32 @@ QtObject {
     }
 
     function writeJsonFile(absPath, obj, cb) {
+        if (_writesInFlight[absPath]) {
+            // A write is already running for this path; just remember the
+            // latest payload. The completion handler picks it up.
+            _writesPending[absPath] = { obj: obj, cb: cb || null }
+            return
+        }
+        _writesInFlight[absPath] = true
         const xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function () {
             if (xhr.readyState !== 4) return
             const ok = xhr.status === 200 || xhr.status === 0 || xhr.status === 201
             if (cb) cb(ok)
+            _writesInFlight[absPath] = false
+            // If a write came in while we were busy, kick it now with the
+            // latest payload only.
+            var pending = _writesPending[absPath]
+            if (pending) {
+                delete _writesPending[absPath]
+                writeJsonFile(absPath, pending.obj, pending.cb)
+            }
         }
         try {
             xhr.open("PUT", "file://" + absPath, true)
             xhr.send(JSON.stringify(obj))
         } catch (e) {
+            _writesInFlight[absPath] = false
             if (cb) cb(false)
         }
     }

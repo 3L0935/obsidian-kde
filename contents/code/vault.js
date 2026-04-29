@@ -142,7 +142,7 @@ function createVaultModel(opts) {
                 aliases: c.aliases || [],
                 tags: c.tags || [],
                 wikilinksRaw: c.wikilinksRaw || [],
-                outgoingLinks: c.outgoingLinks || [],
+                outgoingLinks: [],  // populated by resolveAllLinks() below
                 mtime: c.mtime || 0,
             };
             notes.set(note.path, note);

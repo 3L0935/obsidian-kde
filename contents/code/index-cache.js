@@ -22,7 +22,8 @@ function serializeIndex(opts) {
             mtime: n.mtime,
             tags: n.tags || [],
             wikilinksRaw: n.wikilinksRaw || [],
-            outgoingLinks: n.outgoingLinks || [],
+            // outgoingLinks intentionally not persisted — recomputed via
+            // resolveAllLinks() after hydrateFromCache.
             frontmatter: n.frontmatter || {},
             aliases: n.aliases || [],
             x: pos.x,
