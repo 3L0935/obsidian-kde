@@ -286,6 +286,13 @@ function createSimulation(opts) {
         return ke;
     }
 
+    function unfrozenCount() {
+        if (!frozenBounds) return nodes.length;
+        var c = 0;
+        for (var n of nodes) if (!isFrozen(n)) c++;
+        return c;
+    }
+
     function updateConfig(opts) {
         if (!opts) return;
         for (var k in opts) {
@@ -310,6 +317,7 @@ function createSimulation(opts) {
         getNode: function (id) { return nodeById.get(id) || null; },
         getEdges: function () { return edges; },
         kineticEnergy: kineticEnergy,
+        unfrozenCount: unfrozenCount,
         centroid: centroid,
     };
 }

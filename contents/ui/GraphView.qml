@@ -319,11 +319,12 @@ Item {
             fps = span > 0 ? ((frame.count - 1) * 1000 / span) : 0
         }
         var n = root.sim ? root.sim.getNodes().length : 0
+        var u = root.sim ? root.sim.unfrozenCount() : 0
         var rssMb = root.lastRssKb > 0 ? (root.lastRssKb / 1024).toFixed(0) + "MB" : "?"
         return "FPS " + fps.toFixed(0) +
                "  tick " + tick.p50 + "/" + tick.p95 + "ms" +
                "  paint " + paint.p50 + "/" + paint.p95 + "ms" +
-               "  N=" + n +
+               "  N=" + n + "(U=" + u + ")" +
                "  RSS=" + rssMb
     }
 

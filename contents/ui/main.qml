@@ -84,7 +84,11 @@ PlasmoidItem {
         interval: 2000
         running: Plasmoid.configuration.perfDebug
         repeat: true
-        onTriggered: rssRunner.connectSource("grep VmRSS /proc/self/status | awk '{print $2}'")
+        // /proc/self/status would point to the awk child, not us. $PPID in
+        // the shell expands to the shell's parent — i.e. plasmoidviewer or
+        // plasmashell. Expected normal range: 200-500 MB. 4MB means we're
+        // still looking at the wrong process.
+        onTriggered: rssRunner.connectSource("grep VmRSS /proc/$PPID/status | awk '{print $2}'")
     }
 
     function _rgbIntToHex(rgb) {
