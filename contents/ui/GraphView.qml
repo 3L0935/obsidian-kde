@@ -183,11 +183,6 @@ Item {
             var viewMinY = -halfH - root.panY / root.zoom
             var viewMaxY =  halfH - root.panY / root.zoom
 
-            function inView(n) {
-                return n.x >= viewMinX && n.x <= viewMaxX
-                    && n.y >= viewMinY && n.y <= viewMaxY
-            }
-
             root._viewMinX = viewMinX
             root._viewMaxX = viewMaxX
             root._viewMinY = viewMinY
@@ -195,59 +190,80 @@ Item {
 
             const edges = root.sim.getEdges()
             const nodes = root.sim.getNodes()
-            const byId = {}
-            for (const n of nodes) byId[n.id] = n
+
+            // Tag visibility once per paint (5000 inline checks) so all four
+            // draw passes can read n._inView in O(1) instead of calling a
+            // closure-scoped inView() function ~70k times per paint.
+            for (var ti = 0, tlen = nodes.length; ti < tlen; ti++) {
+                var tn = nodes[ti]
+                tn._inView = (tn.x >= viewMinX && tn.x <= viewMaxX
+                              && tn.y >= viewMinY && tn.y <= viewMaxY)
+            }
+
+            // edges now carry direct refs e.a / e.b populated by the physics
+            // module (no per-paint byId map needed). selectedNodeRef lookup
+            // still needs nodeById since we have an id, not a ref.
+            var selectedNodeRef = null
+            if (root.selectedNodeId) {
+                selectedNodeRef = root.sim.getNode(root.selectedNodeId) || null
+            }
 
             // When a node is selected, build the set of "focused" ids
             // (the node itself + its direct neighbors). Everything else is
             // dimmed and its label hidden, mirroring Obsidian's hover focus.
-            const hasSelection = root.selectedNodeId !== "" && byId[root.selectedNodeId]
+            const hasSelection = selectedNodeRef !== null
             const focused = {}
             if (hasSelection) {
                 focused[root.selectedNodeId] = true
-                for (const e of edges) {
-                    if (e.source === root.selectedNodeId) focused[e.target] = true
-                    else if (e.target === root.selectedNodeId) focused[e.source] = true
+                for (var fi = 0, flen = edges.length; fi < flen; fi++) {
+                    var fe = edges[fi]
+                    if (fe.source === root.selectedNodeId) focused[fe.target] = true
+                    else if (fe.target === root.selectedNodeId) focused[fe.source] = true
                 }
             }
             const dimAlpha = 0.3
+            var eLen = edges.length
+            var nLen = nodes.length
 
             ctx.lineWidth = 1 / root.zoom
             // Dimmed edges first
             if (hasSelection) {
                 ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4 * dimAlpha)
                 ctx.beginPath()
-                for (const e of edges) {
-                    if (focused[e.source] && focused[e.target]) continue
-                    const a = byId[e.source], b = byId[e.target]
-                    if (!a || !b) continue
-                    if (!inView(a) && !inView(b)) continue
-                    ctx.moveTo(a.x, a.y)
-                    ctx.lineTo(b.x, b.y)
+                for (var di = 0; di < eLen; di++) {
+                    var de = edges[di]
+                    if (focused[de.source] && focused[de.target]) continue
+                    var da = de.a, db = de.b
+                    if (!da || !db) continue
+                    if (!da._inView && !db._inView) continue
+                    ctx.moveTo(da.x, da.y)
+                    ctx.lineTo(db.x, db.y)
                 }
                 ctx.stroke()
             }
             // Normal edges
             ctx.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.4)
             ctx.beginPath()
-            for (const e of edges) {
+            for (var ei = 0; ei < eLen; ei++) {
+                var e = edges[ei]
                 if (hasSelection && !(focused[e.source] && focused[e.target])) continue
-                const a = byId[e.source], b = byId[e.target]
-                if (!a || !b) continue
-                if (!inView(a) && !inView(b)) continue
-                ctx.moveTo(a.x, a.y)
-                ctx.lineTo(b.x, b.y)
+                var ea = e.a, eb = e.b
+                if (!ea || !eb) continue
+                if (!ea._inView && !eb._inView) continue
+                ctx.moveTo(ea.x, ea.y)
+                ctx.lineTo(eb.x, eb.y)
             }
             ctx.stroke()
 
             const defaultColor = Kirigami.Theme.highlightColor
             const colors = root.nodeColors || {}
-            for (const n of nodes) {
-                if (!inView(n)) continue
-                ctx.globalAlpha = (hasSelection && !focused[n.id]) ? dimAlpha : 1.0
-                ctx.fillStyle = colors[n.id] || defaultColor
+            for (var ni = 0; ni < nLen; ni++) {
+                var nn = nodes[ni]
+                if (!nn._inView) continue
+                ctx.globalAlpha = (hasSelection && !focused[nn.id]) ? dimAlpha : 1.0
+                ctx.fillStyle = colors[nn.id] || defaultColor
                 ctx.beginPath()
-                ctx.arc(n.x, n.y, 5, 0, Math.PI * 2)
+                ctx.arc(nn.x, nn.y, 5, 0, Math.PI * 2)
                 ctx.fill()
             }
             ctx.globalAlpha = 1.0
@@ -256,24 +272,22 @@ Item {
                 ctx.fillStyle = Kirigami.Theme.textColor
                 ctx.font = (root.labelFontSize / root.zoom) + "px sans-serif"
                 ctx.textAlign = "center"
-                for (const n of nodes) {
-                    if (!inView(n)) continue
-                    if (hasSelection && !focused[n.id]) continue
-                    const note = root.vaultModel.getNote(n.id)
-                    if (note) ctx.fillText(note.title, n.x, n.y - 10)
+                for (var li = 0; li < nLen; li++) {
+                    var ln = nodes[li]
+                    if (!ln._inView) continue
+                    if (hasSelection && !focused[ln.id]) continue
+                    var note = root.vaultModel.getNote(ln.id)
+                    if (note) ctx.fillText(note.title, ln.x, ln.y - 10)
                 }
             }
 
             // Selected-node highlight ring (drawn last so it sits on top).
-            if (root.selectedNodeId) {
-                const sel = byId[root.selectedNodeId]
-                if (sel) {
-                    ctx.strokeStyle = Kirigami.Theme.highlightColor
-                    ctx.lineWidth = 2 / root.zoom
-                    ctx.beginPath()
-                    ctx.arc(sel.x, sel.y, 9, 0, Math.PI * 2)
-                    ctx.stroke()
-                }
+            if (selectedNodeRef) {
+                ctx.strokeStyle = Kirigami.Theme.highlightColor
+                ctx.lineWidth = 2 / root.zoom
+                ctx.beginPath()
+                ctx.arc(selectedNodeRef.x, selectedNodeRef.y, 9, 0, Math.PI * 2)
+                ctx.stroke()
             }
 
             ctx.restore()
